@@ -1922,6 +1922,7 @@ export default function HabitTracker() {
         </div>
 
         <div
+          className="hibi-analysis-panel"
           style={{
             flex: "0 0 320px",
             background: habitTheme.panelAlt,

@@ -419,4 +419,11 @@ button, a {
   .hibi-softfocus-add-form {
     display: flex !important;
   }
+
+  /* Habits — analysis panel full width on mobile */
+  .hibi-analysis-panel {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
 }
