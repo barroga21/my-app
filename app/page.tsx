@@ -474,7 +474,7 @@ export default function HomePage() {
           : "linear-gradient(145deg, #f7fbf4 0%, #eef7e8 40%, #e0f0da 75%, #d4ead4 100%)",
         fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif",
         color: nightMode ? "#e9ecef" : "#0d2a14",
-        animation: "hibiFadeIn 0.35s ease",
+        animation: "hibiFadeIn var(--hibi-motion-normal) var(--hibi-ease-enter)",
       }}
     >
       {refreshing ? <div className="hibi-pull-indicator" aria-hidden="true" /> : null}
@@ -571,19 +571,19 @@ export default function HomePage() {
           </div>
 
           <div className="hibi-home-stat-tiles" style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
-            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px", animation: "hibiFadeIn 0.35s ease", animationDelay: "40ms", animationFillMode: "both" }}>
+            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px", animation: "hibiFadeIn var(--hibi-motion-normal) var(--hibi-ease-enter)", animationDelay: "40ms", animationFillMode: "both" }}>
               <p style={{ margin: "0 0 4px", color: nightMode ? "#6a7a6a" : "#4a7a50", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>Rhythm</p>
               <p style={{ margin: 0, color: nightMode ? "#e9ecef" : "#0d2a14", fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}>{rhythmLabel}</p>
             </div>
-            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px", animation: "hibiFadeIn 0.35s ease", animationDelay: "90ms", animationFillMode: "both" }}>
+            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px", animation: "hibiFadeIn var(--hibi-motion-normal) var(--hibi-ease-enter)", animationDelay: "90ms", animationFillMode: "both" }}>
               <p style={{ margin: "0 0 4px", color: nightMode ? "#6a7a6a" : "#4a7a50", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>Habit Streak</p>
               <p style={{ margin: 0, color: nightMode ? "#e9ecef" : "#0d2a14", fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}>{streak}<span style={{ fontSize: 14, fontWeight: 500, color: nightMode ? "#6a7a6a" : "#4a7a50" }}> day{streak === 1 ? "" : "s"}</span></p>
             </div>
-            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px", animation: "hibiFadeIn 0.35s ease", animationDelay: "140ms", animationFillMode: "both" }}>
+            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px", animation: "hibiFadeIn var(--hibi-motion-normal) var(--hibi-ease-enter)", animationDelay: "140ms", animationFillMode: "both" }}>
               <p style={{ margin: "0 0 4px", color: nightMode ? "#6a7a6a" : "#4a7a50", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>Journal Streak</p>
               <p style={{ margin: 0, color: nightMode ? "#e9ecef" : "#0d2a14", fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}>{journalStreak}<span style={{ fontSize: 14, fontWeight: 500, color: nightMode ? "#6a7a6a" : "#4a7a50" }}> day{journalStreak === 1 ? "" : "s"}</span></p>
             </div>
-            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px", animation: "hibiFadeIn 0.35s ease", animationDelay: "190ms", animationFillMode: "both" }}>
+            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px", animation: "hibiFadeIn var(--hibi-motion-normal) var(--hibi-ease-enter)", animationDelay: "190ms", animationFillMode: "both" }}>
               <p style={{ margin: "0 0 4px", color: nightMode ? "#6a7a6a" : "#4a7a50", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>This Month</p>
               <p style={{ margin: 0, color: nightMode ? "#e9ecef" : "#0d2a14", fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}>{wordsThisMonth >= 1000 ? `${(wordsThisMonth / 1000).toFixed(1)}k` : wordsThisMonth}<span style={{ fontSize: 14, fontWeight: 500, color: nightMode ? "#6a7a6a" : "#4a7a50" }}> words</span></p>
             </div>

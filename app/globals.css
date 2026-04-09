@@ -32,6 +32,14 @@
 
   --hibi-blur: blur(18px);
   --hibi-blur-sm: blur(8px);
+
+  /* Motion tokens */
+  --hibi-ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --hibi-ease-enter: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --hibi-ease-emphasized: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --hibi-motion-fast: 0.18s;
+  --hibi-motion-normal: 0.28s;
+  --hibi-motion-slow: 0.45s;
 }
 
 @theme inline {
@@ -445,7 +453,7 @@ button, a {
 
 /* Journal timeline — base slide-in animation */
 .hibi-journal-timeline-list > button {
-  animation: hibiSlideRight 0.22s ease both;
+  animation: hibiSlideRight var(--hibi-motion-normal) var(--hibi-ease-enter) both;
 }
 
 /* Pull-to-refresh indicator */
@@ -463,7 +471,7 @@ button, a {
   border-radius: 50%;
   border: 3px solid rgba(46,125,50,0.25);
   border-top-color: #2e7d32;
-  animation: hibiPullSpin 0.7s linear infinite;
+  animation: hibiPullSpin var(--hibi-motion-slow) linear infinite;
   z-index: 999;
 }
 

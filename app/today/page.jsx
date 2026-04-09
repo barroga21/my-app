@@ -1284,7 +1284,7 @@ export default function JournalPage() {
                         display: "flex",
                         flexDirection: "column",
                         gap: 1,
-                        animation: "hibiSlideRight 0.24s ease both",
+                        animation: "hibiSlideRight var(--hibi-motion-normal) var(--hibi-ease-enter) both",
                         animationDelay: `${Math.min(idx * 35, 220)}ms`,
                         touchAction: "pan-y",
                       }}
@@ -1403,7 +1403,7 @@ export default function JournalPage() {
               lineHeight: 1.45,
               outline: "none",
               boxShadow: nightMode ? "inset 0 1px 2px #00000066" : "inset 0 1px 2px #b9d0ba55",
-              transition: "height 0.18s ease",
+              transition: "height var(--hibi-motion-fast) var(--hibi-ease-emphasized)",
               overflow: "hidden",
             }}
           />
