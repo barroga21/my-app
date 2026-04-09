@@ -581,7 +581,7 @@ export default function CalendarPage() {
             </button>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 10, color: nightMode ? "#b6bdc7" : "#388e3c", fontWeight: 600, fontSize: 24, marginBottom: 10 }}>
+          <div className="hibi-cal-month-nav" style={{ display: "flex", alignItems: "center", gap: 10, color: nightMode ? "#b6bdc7" : "#388e3c", fontWeight: 600, fontSize: 24, marginBottom: 10 }}>
             <button
               onClick={() => {
                 if (month === 0) { setCalendarYear((y) => y - 1); setMonth(11); }

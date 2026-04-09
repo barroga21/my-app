@@ -222,7 +222,7 @@ button, a {
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border-top: 1px solid rgba(255,255,255,0.07);
-    padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+    padding: 8px 0 max(22px, env(safe-area-inset-bottom));
     justify-content: space-around;
     align-items: center;
   }
@@ -426,4 +426,19 @@ button, a {
     width: 100% !important;
     box-sizing: border-box !important;
   }
+
+  /* Home — CTA buttons stack full-width on mobile */
+  .hibi-home-cta-row { flex-direction: column !important; }
+  .hibi-home-cta-row a { width: 100% !important; text-align: center !important; box-sizing: border-box !important; }
+
+  /* Home — stat tiles 2 columns on mobile */
+  .hibi-home-stat-tiles { grid-template-columns: 1fr 1fr !important; }
+
+  /* Journal — hide secondary controls on mobile */
+  .hibi-journal-year-btn { display: none !important; }
+  .hibi-journal-export-btn { display: none !important; }
+  .hibi-journal-night-select { display: none !important; }
+
+  /* Calendar — month nav row wraps gracefully on mobile */
+  .hibi-cal-month-nav { flex-wrap: wrap !important; justify-content: center !important; }
 }

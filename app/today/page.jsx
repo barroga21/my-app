@@ -847,12 +847,13 @@ export default function JournalPage() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 1140, margin: "0 auto 12px", zIndex: 2, position: "relative", gap: 12, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0, fontSize: "clamp(28px, 5vw, 40px)", letterSpacing: -0.5, color: theme.text, fontWeight: 800 }}>Journal</h1>
 
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <div className="hibi-journal-top-controls" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           {/* Year navigation */}
           <button
             type="button"
             onClick={() => setSelectedYear((y) => y - 1)}
             aria-label="Previous year"
+            className="hibi-journal-year-btn"
             style={{ border: `1px solid ${theme.border}`, background: theme.panel, color: theme.text, borderRadius: 8, padding: "7px 8px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}
           >
             ‹{selectedYear - 1}
@@ -870,6 +871,7 @@ export default function JournalPage() {
             type="button"
             onClick={() => setSelectedYear((y) => Math.min(y + 1, now.getFullYear() + 1))}
             aria-label="Next year"
+            className="hibi-journal-year-btn"
             style={{ border: `1px solid ${theme.border}`, background: theme.panel, color: theme.text, borderRadius: 8, padding: "7px 8px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}
           >
             {selectedYear + 1}›
@@ -899,6 +901,7 @@ export default function JournalPage() {
             onClick={exportEntries}
             title={`Export ${monthNames[selectedMonth]} ${selectedYear} as Markdown`}
             aria-label={`Export journal entries for ${monthNames[selectedMonth]} ${selectedYear}`}
+            className="hibi-journal-export-btn"
             style={{ border: `1px solid ${theme.border}`, background: theme.panel, color: theme.text, borderRadius: 999, padding: "7px 12px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}
           >
             ↓ Export
@@ -910,6 +913,7 @@ export default function JournalPage() {
               setNightModePreference(next);
               setStoredNightModePreference(next);
             }}
+            className="hibi-journal-night-select"
             style={{ border: `1px solid ${theme.border}`, background: theme.panel, color: theme.text, borderRadius: 999, padding: "7px 10px", fontWeight: 700, fontSize: 12 }}
           >
             <option value={NIGHT_MODE_OPTIONS.AUTO}>Night: Auto</option>
