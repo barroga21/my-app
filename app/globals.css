@@ -360,6 +360,22 @@ button, a {
     max-width: 100% !important;
   }
 
+  /* Day card itself — prevent overflow */
+  .day-card-transition {
+    min-width: 0 !important;
+    overflow: hidden !important;
+  }
+  /* Force every direct grid child of the day card to not overflow */
+  .day-card-transition > * {
+    min-width: 0;
+  }
+  /* Inputs and textareas inside day card fully constrained */
+  .day-card-transition input,
+  .day-card-transition textarea {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
   /* Calendar day cell — centre number + ring, reduce padding on small screens */
   .hibi-cal-day-btn {
     padding: 4px !important;

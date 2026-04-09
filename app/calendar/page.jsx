@@ -739,7 +739,7 @@ export default function CalendarPage() {
           </div>
         </div>
 
-        <aside className="hibi-calendar-aside" style={{ flex: "0 0 360px", width: 360, maxWidth: "100%" }}>
+        <aside className="hibi-calendar-aside" style={{ flex: "0 0 360px", width: 360, maxWidth: "100%", minWidth: 0, overflow: "hidden" }}>
           {/* Mini Month View */}
           <div className="hibi-mini-calendar" style={{ marginBottom: 24, background: nightMode ? "#1b2026" : "#f4faf2", border: `1px solid ${nightMode ? "#2b3139" : "#c8e6c9"}`, borderRadius: 12, padding: 12 }}>
             <div style={{ textAlign: "center", fontWeight: 700, color: nightMode ? "#e9ecef" : "#14532d", fontSize: 18, marginBottom: 6 }}>
