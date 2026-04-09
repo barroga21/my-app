@@ -842,9 +842,7 @@ export default function JournalPage() {
         />
       ) : null}
 
-      <div style={{ position: "relative", zIndex: 2 }}>
-        <NavBar activePage="journal" />
-      </div>
+      <NavBar activePage="journal" />
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 1140, margin: "0 auto 12px", zIndex: 2, position: "relative", gap: 12, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0, fontSize: "clamp(28px, 5vw, 40px)", letterSpacing: -0.5, color: theme.text, fontWeight: 800 }}>Journal</h1>
