@@ -305,4 +305,19 @@ body {
   body {
     padding-bottom: 72px;
   }
+
+  /* Calendar page — hide redundant mini calendar on mobile */
+  .hibi-mini-calendar {
+    display: none !important;
+  }
+
+  /* Calendar page — show day card panel above the main calendar on mobile */
+  .hibi-calendar-flex {
+    flex-direction: column !important;
+  }
+  .hibi-calendar-aside {
+    order: -1 !important;
+    width: 100% !important;
+    flex: unset !important;
+  }
 }

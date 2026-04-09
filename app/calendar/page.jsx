@@ -549,7 +549,7 @@ export default function CalendarPage() {
         <p style={{ margin: "6px 0 0", color: calendarTheme.body, fontSize: 16 }}>{monthSummary}</p>
       </section>
 
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "center", gap: 26, flexWrap: "wrap" }}>
+      <div className="hibi-calendar-flex" style={{ display: "flex", alignItems: "flex-start", justifyContent: "center", gap: 26, flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 670px", maxWidth: 720 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
             <h1 style={{ color: calendarTheme.heading, fontWeight: 800, fontSize: "clamp(26px, 5vw, 38px)", letterSpacing: -0.5, margin: 0 }}>Calendar</h1>
@@ -616,7 +616,7 @@ export default function CalendarPage() {
           <div style={{ marginBottom: 10, border: `1px solid ${calendarTheme.border}`, borderRadius: 14, background: nightMode ? "#1b2026" : "#f4faf2", padding: "10px 12px" }}>
             <div style={{ height: 8, borderRadius: 999, background: weekMoodGradient, marginBottom: 8, opacity: 0.35 }} />
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <svg width="360" height="34" viewBox="0 0 360 34">
+              <svg width="100%" height="34" viewBox="0 0 360 34" style={{ minWidth: 0, flexShrink: 1 }}>
                 <line x1="0" y1="30" x2="360" y2="30" stroke={nightMode ? "#3a4350" : "#d3e2d3"} strokeWidth="1" opacity="0.7" />
                 <polyline points={weekLinePoints} fill="none" stroke="#A8C3A0" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
@@ -731,9 +731,9 @@ export default function CalendarPage() {
           </div>
         </div>
 
-        <aside style={{ flex: "0 0 360px", width: 360, maxWidth: "100%" }}>
+        <aside className="hibi-calendar-aside" style={{ flex: "0 0 360px", width: 360, maxWidth: "100%" }}>
           {/* Mini Month View */}
-          <div style={{ marginBottom: 24, background: nightMode ? "#1b2026" : "#f4faf2", border: `1px solid ${nightMode ? "#2b3139" : "#c8e6c9"}`, borderRadius: 12, padding: 12 }}>
+          <div className="hibi-mini-calendar" style={{ marginBottom: 24, background: nightMode ? "#1b2026" : "#f4faf2", border: `1px solid ${nightMode ? "#2b3139" : "#c8e6c9"}`, borderRadius: 12, padding: 12 }}>
             <div style={{ textAlign: "center", fontWeight: 700, color: nightMode ? "#e9ecef" : "#14532d", fontSize: 18, marginBottom: 6 }}>
               {monthNames[month]} {calendarYear}
             </div>
