@@ -5,6 +5,7 @@ import { TouchEvent, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useNightMode } from "@/lib/useNightMode";
 import { getStoredNightModePreference, setStoredNightModePreference, NIGHT_MODE_OPTIONS } from "@/lib/nightModePreference";
+import { INTERACTION_TUNING, shouldTriggerPullRefresh, triggerHaptic } from "@/lib/interactionTuning";
 import NavBar from "@/app/components/NavBar";
 
 const gentlePresences = [
@@ -41,11 +42,6 @@ export default function HomePage() {
   const pullStart = useRef({ x: 0, y: 0, at: 0 });
   const pullActive = useRef(false);
   const pullTriggered = useRef(false);
-  const GESTURE = {
-    pullDistance: 96,
-    maxSideDrift: 36,
-    refreshHaptic: 14,
-  } as const;
 
   const now = new Date();
   const year = now.getFullYear();
@@ -235,12 +231,10 @@ export default function HomePage() {
   }
   function handleTouchMove(e: TouchEvent<HTMLDivElement>) {
     if (!pullActive.current) return;
-    const dy = e.touches[0].clientY - pullStart.current.y;
-    const dx = Math.abs(e.touches[0].clientX - pullStart.current.x);
-    if (!pullTriggered.current && dy > GESTURE.pullDistance && dx < GESTURE.maxSideDrift) {
+    if (!pullTriggered.current && shouldTriggerPullRefresh(pullStart.current, e.touches[0])) {
       setRefreshing(true);
       pullTriggered.current = true;
-      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(GESTURE.refreshHaptic);
+      triggerHaptic(INTERACTION_TUNING.pullToRefresh.hapticMs);
     }
   }
   function handleTouchEnd() {
@@ -248,7 +242,7 @@ export default function HomePage() {
       setTimeout(() => {
         setRefreshTick((t) => t + 1);
         setRefreshing(false);
-      }, 450);
+      }, INTERACTION_TUNING.pullToRefresh.completeDelayMs);
     }
     pullActive.current = false;
     pullTriggered.current = false;

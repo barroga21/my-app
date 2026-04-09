@@ -4,6 +4,7 @@ import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useNightMode } from "@/lib/useNightMode";
+import { INTERACTION_TUNING, shouldTriggerSwipeDelete, triggerHaptic } from "@/lib/interactionTuning";
 import NavBar from "@/app/components/NavBar";
 
 function dedupeHabits(list) {
@@ -45,14 +46,6 @@ export default function HabitTracker() {
   const [isMobile, setIsMobile] = useState(false);
   const cellClickTimersRef = useRef({});
   const habitSwipeStartRef = useRef({});
-  const GESTURE = {
-    deleteDistance: 100,
-    maxVerticalDrift: 18,
-    maxSwipeMs: 520,
-    minSwipeSpeed: 0.24,
-    checkHaptic: 22,
-    deleteHaptic: 10,
-  };
   const router = useRouter();
   const nightMode = useNightMode();
 
@@ -536,7 +529,7 @@ export default function HabitTracker() {
     });
 
     if (next === "dot") {
-      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(GESTURE.checkHaptic);
+      triggerHaptic(INTERACTION_TUNING.haptics.habitCheckMs);
       setCompletionPulseKey(key);
       setCompletionCheckKey(key);
       setTimeout(() => setCompletionPulseKey((current) => (current === key ? null : current)), 420);
@@ -850,13 +843,9 @@ export default function HabitTracker() {
     const start = habitSwipeStartRef.current[habit];
     const t = e.changedTouches?.[0];
     if (!start || !t) return;
-    const dx = t.clientX - start.x;
-    const dy = Math.abs(t.clientY - start.y);
-    const dt = Math.max(1, Date.now() - start.at);
-    const speed = Math.abs(dx) / dt;
     delete habitSwipeStartRef.current[habit];
-    if (dx < -GESTURE.deleteDistance && dy < GESTURE.maxVerticalDrift && dt < GESTURE.maxSwipeMs && speed > GESTURE.minSwipeSpeed && editingHabit !== habit) {
-      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(GESTURE.deleteHaptic);
+    if (shouldTriggerSwipeDelete(start, t, INTERACTION_TUNING.swipeDelete) && editingHabit !== habit) {
+      triggerHaptic(INTERACTION_TUNING.haptics.habitDeleteMs);
       removeHabit(habit);
     }
   }

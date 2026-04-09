@@ -9,6 +9,7 @@ import {
   NIGHT_MODE_OPTIONS,
   setStoredNightModePreference,
 } from "@/lib/nightModePreference";
+import { INTERACTION_TUNING, shouldTriggerSwipeDelete, triggerHaptic } from "@/lib/interactionTuning";
 import NavBar from "@/app/components/NavBar";
 
 const MOOD_TONES = [
@@ -151,13 +152,6 @@ export default function JournalPage() {
   const autoSaveTimerRef = useRef(null);
   const entrySwipeStartRef = useRef({});
   const resizingSidebarRef = useRef(false);
-  const GESTURE = {
-    deleteDistance: 100,
-    maxVerticalDrift: 18,
-    maxSwipeMs: 520,
-    minSwipeSpeed: 0.24,
-    deleteHaptic: 12,
-  };
   // Ref always pointing to the latest saveEntry — prevents stale closure in auto-save/keyboard effects
   const saveEntryRef = useRef(null);
 
@@ -375,12 +369,8 @@ export default function JournalPage() {
     const t = e.changedTouches?.[0];
     if (!start || !t) return;
     delete entrySwipeStartRef.current[entryId];
-    const dx = t.clientX - start.x;
-    const dy = Math.abs(t.clientY - start.y);
-    const dt = Math.max(1, Date.now() - start.at);
-    const speed = Math.abs(dx) / dt;
-    if (dx < -GESTURE.deleteDistance && dy < GESTURE.maxVerticalDrift && dt < GESTURE.maxSwipeMs && speed > GESTURE.minSwipeSpeed) {
-      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(GESTURE.deleteHaptic);
+    if (shouldTriggerSwipeDelete(start, t, INTERACTION_TUNING.swipeDelete)) {
+      triggerHaptic(INTERACTION_TUNING.haptics.journalDeleteMs);
       deleteEntryById(entryId);
     }
   }
