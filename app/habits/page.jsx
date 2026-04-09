@@ -1363,16 +1363,17 @@ export default function HabitTracker() {
             className="hibi-back-to-full"
             onClick={() => setSoftFocusMode(false)}
             style={{
-              border: "none",
-              background: "transparent",
-              color: habitTheme.muted,
-              textDecoration: "underline",
-              fontSize: 12,
+              border: `1.5px solid ${nightMode ? "#4ade80" : "#1a6e36"}`,
+              background: nightMode ? "rgba(74,222,128,0.10)" : "rgba(26,110,54,0.08)",
+              color: nightMode ? "#4ade80" : "#1a6e36",
+              borderRadius: 999,
+              fontSize: 13,
+              fontWeight: 700,
               cursor: "pointer",
-              padding: 0,
+              padding: "7px 16px",
             }}
           >
-            Back to full view
+            ← Full view
           </button>
         )}
       </div>
@@ -1678,12 +1679,10 @@ export default function HabitTracker() {
                                 position: "sticky",
                                 left: 0,
                                 zIndex: 1,
-                                minWidth: isMobile ? 100 : 120,
-                                maxWidth: isMobile ? "none" : 200,
-                                whiteSpace: isMobile ? "normal" : "nowrap",
-                                overflow: isMobile ? "visible" : "hidden",
-                                textOverflow: isMobile ? "clip" : "ellipsis",
-                                wordBreak: isMobile ? "break-word" : undefined,
+                                minWidth: isMobile ? "max-content" : 120,
+                                maxWidth: "none",
+                                whiteSpace: "nowrap",
+                                overflow: "visible",
                               }}>
                                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                                   <span style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
@@ -1731,11 +1730,10 @@ export default function HabitTracker() {
                                           cursor: "text",
                                           padding: 0,
                                           textAlign: "left",
-                                          overflow: isMobile ? "visible" : "hidden",
-                                          textOverflow: isMobile ? "clip" : "ellipsis",
-                                          whiteSpace: isMobile ? "normal" : "nowrap",
-                                          wordBreak: isMobile ? "break-word" : undefined,
-                                          maxWidth: isMobile ? "none" : "100%",
+                                          overflow: "visible",
+                                          textOverflow: "clip",
+                                          whiteSpace: "nowrap",
+                                          maxWidth: "none",
                                           display: "block",
                                         }}
                                         aria-label={`Edit ${habit}`}
