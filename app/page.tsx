@@ -38,9 +38,14 @@ export default function HomePage() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [nightModePref, setNightModePref] = useState(NIGHT_MODE_OPTIONS.AUTO);
-  const pullStartY = useRef(0);
+  const pullStart = useRef({ x: 0, y: 0, at: 0 });
   const pullActive = useRef(false);
   const pullTriggered = useRef(false);
+  const GESTURE = {
+    pullDistance: 96,
+    maxSideDrift: 36,
+    refreshHaptic: 14,
+  } as const;
 
   const now = new Date();
   const year = now.getFullYear();
@@ -223,17 +228,19 @@ export default function HomePage() {
   // Pull-to-refresh handlers
   function handleTouchStart(e: TouchEvent<HTMLDivElement>) {
     if (window.scrollY === 0) {
-      pullStartY.current = e.touches[0].clientY;
+      pullStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, at: Date.now() };
       pullActive.current = true;
       pullTriggered.current = false;
     }
   }
   function handleTouchMove(e: TouchEvent<HTMLDivElement>) {
     if (!pullActive.current) return;
-    if (!pullTriggered.current && e.touches[0].clientY - pullStartY.current > 80) {
+    const dy = e.touches[0].clientY - pullStart.current.y;
+    const dx = Math.abs(e.touches[0].clientX - pullStart.current.x);
+    if (!pullTriggered.current && dy > GESTURE.pullDistance && dx < GESTURE.maxSideDrift) {
       setRefreshing(true);
       pullTriggered.current = true;
-      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(18);
+      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(GESTURE.refreshHaptic);
     }
   }
   function handleTouchEnd() {
@@ -241,7 +248,7 @@ export default function HomePage() {
       setTimeout(() => {
         setRefreshTick((t) => t + 1);
         setRefreshing(false);
-      }, 600);
+      }, 450);
     }
     pullActive.current = false;
     pullTriggered.current = false;

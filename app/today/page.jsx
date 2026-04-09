@@ -151,6 +151,13 @@ export default function JournalPage() {
   const autoSaveTimerRef = useRef(null);
   const entrySwipeStartRef = useRef({});
   const resizingSidebarRef = useRef(false);
+  const GESTURE = {
+    deleteDistance: 100,
+    maxVerticalDrift: 18,
+    maxSwipeMs: 520,
+    minSwipeSpeed: 0.24,
+    deleteHaptic: 12,
+  };
   // Ref always pointing to the latest saveEntry — prevents stale closure in auto-save/keyboard effects
   const saveEntryRef = useRef(null);
 
@@ -360,7 +367,7 @@ export default function JournalPage() {
   function handleEntrySwipeStart(entryId, e) {
     const t = e.changedTouches?.[0];
     if (!t) return;
-    entrySwipeStartRef.current[entryId] = { x: t.clientX, y: t.clientY };
+    entrySwipeStartRef.current[entryId] = { x: t.clientX, y: t.clientY, at: Date.now() };
   }
 
   function handleEntrySwipeEnd(entryId, e) {
@@ -370,8 +377,10 @@ export default function JournalPage() {
     delete entrySwipeStartRef.current[entryId];
     const dx = t.clientX - start.x;
     const dy = Math.abs(t.clientY - start.y);
-    if (dx < -90 && dy < 24) {
-      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(16);
+    const dt = Math.max(1, Date.now() - start.at);
+    const speed = Math.abs(dx) / dt;
+    if (dx < -GESTURE.deleteDistance && dy < GESTURE.maxVerticalDrift && dt < GESTURE.maxSwipeMs && speed > GESTURE.minSwipeSpeed) {
+      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(GESTURE.deleteHaptic);
       deleteEntryById(entryId);
     }
   }

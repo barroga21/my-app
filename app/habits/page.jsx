@@ -45,6 +45,14 @@ export default function HabitTracker() {
   const [isMobile, setIsMobile] = useState(false);
   const cellClickTimersRef = useRef({});
   const habitSwipeStartRef = useRef({});
+  const GESTURE = {
+    deleteDistance: 100,
+    maxVerticalDrift: 18,
+    maxSwipeMs: 520,
+    minSwipeSpeed: 0.24,
+    checkHaptic: 22,
+    deleteHaptic: 10,
+  };
   const router = useRouter();
   const nightMode = useNightMode();
 
@@ -528,7 +536,7 @@ export default function HabitTracker() {
     });
 
     if (next === "dot") {
-      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(30);
+      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(GESTURE.checkHaptic);
       setCompletionPulseKey(key);
       setCompletionCheckKey(key);
       setTimeout(() => setCompletionPulseKey((current) => (current === key ? null : current)), 420);
@@ -834,7 +842,7 @@ export default function HabitTracker() {
     if (!isMobile) return;
     const t = e.changedTouches?.[0];
     if (!t) return;
-    habitSwipeStartRef.current[habit] = { x: t.clientX, y: t.clientY };
+    habitSwipeStartRef.current[habit] = { x: t.clientX, y: t.clientY, at: Date.now() };
   }
 
   function handleHabitRowTouchEnd(habit, e) {
@@ -844,8 +852,11 @@ export default function HabitTracker() {
     if (!start || !t) return;
     const dx = t.clientX - start.x;
     const dy = Math.abs(t.clientY - start.y);
+    const dt = Math.max(1, Date.now() - start.at);
+    const speed = Math.abs(dx) / dt;
     delete habitSwipeStartRef.current[habit];
-    if (dx < -90 && dy < 24 && editingHabit !== habit) {
+    if (dx < -GESTURE.deleteDistance && dy < GESTURE.maxVerticalDrift && dt < GESTURE.maxSwipeMs && speed > GESTURE.minSwipeSpeed && editingHabit !== habit) {
+      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(GESTURE.deleteHaptic);
       removeHabit(habit);
     }
   }
