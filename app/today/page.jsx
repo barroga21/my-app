@@ -934,9 +934,10 @@ export default function JournalPage() {
         )}
       </div>
 
-      <div style={{ maxWidth: 1140, margin: "0 auto", display: "grid", gridTemplateColumns: writeWithHibi ? "1fr" : "200px 1fr", gap: 14, alignItems: "start", position: "relative", zIndex: 2 }}>
+      <div className="hibi-journal-grid" style={{ maxWidth: 1140, margin: "0 auto", display: "grid", gridTemplateColumns: writeWithHibi ? "1fr" : "200px 1fr", gap: 14, alignItems: "start", position: "relative", zIndex: 2 }}>
         {!writeWithHibi && (
         <aside
+          className="hibi-journal-sidebar"
           style={{
             background: theme.glass,
             backdropFilter: "blur(18px)",
@@ -990,7 +991,7 @@ export default function JournalPage() {
               <div style={{ position: "absolute", left: 18, top: 10, bottom: 10, width: 1.5, background: nightMode ? "#353c46" : "#b9d2ba" }} />
             ) : null}
 
-            <div style={{ display: "grid", gap: 10 }}>
+            <div className="hibi-journal-timeline-list" style={{ display: "grid", gap: 10 }}>
               {filteredJournaledDays.map((item) => {
                 const mood = MOOD_TONES.find((m) => m.key === item.mood) || MOOD_TONES[1];
                 const active = item.day === selectedDay;
@@ -1027,7 +1028,7 @@ export default function JournalPage() {
           </div>
 
           {monthlyReflection.totalEntries > 0 && (
-            <div style={{ marginTop: 12, borderTop: `1px solid ${theme.border}`, paddingTop: 10 }}>
+            <div className="hibi-sidebar-stats" style={{ marginTop: 12, borderTop: `1px solid ${theme.border}`, paddingTop: 10 }}>
               <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 700, color: theme.muted }}>This Month</p>
               <p style={{ margin: "0 0 3px", color: theme.text, fontSize: 12 }}>{monthlyReflection.totalEntries} {monthlyReflection.totalEntries === 1 ? "entry" : "entries"}</p>
               <p style={{ margin: "0 0 3px", color: theme.text, fontSize: 12 }}>~{monthlyReflection.totalWords} words</p>
@@ -1037,8 +1038,7 @@ export default function JournalPage() {
             </div>
           )}
 
-          <div style={{ marginTop: 10, borderTop: `1px solid ${theme.border}`, paddingTop: 8 }}>
-            <p style={{ margin: "0 0 4px", fontSize: 11, fontWeight: 700, color: theme.muted }}>Mood · Last 7 Days</p>
+          <div className="hibi-sidebar-stats" style={{ marginTop: 10, borderTop: `1px solid ${theme.border}`, paddingTop: 8 }}>
             <div style={{ display: "flex", gap: 3 }}>
               {last7MoodDots.map(({ key, day, mood }) => {
                 const m = MOOD_TONES.find((x) => x.key === mood);
@@ -1054,7 +1054,7 @@ export default function JournalPage() {
           </div>
 
           {moodTimelinePoints.length >= 2 && (
-            <div style={{ marginTop: 10, borderTop: `1px solid ${theme.border}`, paddingTop: 8 }}>
+            <div className="hibi-sidebar-stats" style={{ marginTop: 10, borderTop: `1px solid ${theme.border}`, paddingTop: 8 }}>
               <p style={{ margin: "0 0 4px", fontSize: 11, fontWeight: 700, color: theme.muted }}>Mood Timeline · {monthNames[selectedMonth]}</p>
               <svg width="100%" height="38" viewBox={`0 0 ${daysInMonth} 10`} preserveAspectRatio="none" style={{ display: "block" }}>
                 <polyline
@@ -1083,6 +1083,7 @@ export default function JournalPage() {
         )}
 
         <section
+          className="hibi-journal-entry"
           style={{
             background: theme.glass,
             backdropFilter: "blur(18px)",
