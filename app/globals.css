@@ -408,11 +408,11 @@ button, a {
     max-width: none !important;
   }
 
-  /* Habits — Back to full view: bigger tap target on mobile */
+  /* Habits — Back to full view: big tap target on mobile */
   .hibi-back-to-full {
-    font-size: 14px !important;
-    padding: 8px 0 !important;
-    color: inherit !important;
+    font-size: 17px !important;
+    padding: 16px 36px !important;
+    min-width: 180px !important;
   }
 
   /* Habits — Add habit form shown in soft focus mode on mobile */
