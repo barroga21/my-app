@@ -147,7 +147,10 @@ export default function JournalPage() {
   const [unsavedChanges, setUnsavedChanges] = useState(false);
   const [saveFlash, setSaveFlash] = useState(false);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(200);
   const autoSaveTimerRef = useRef(null);
+  const entrySwipeStartRef = useRef({});
+  const resizingSidebarRef = useRef(false);
   // Ref always pointing to the latest saveEntry — prevents stale closure in auto-save/keyboard effects
   const saveEntryRef = useRef(null);
 
@@ -335,6 +338,43 @@ export default function JournalPage() {
     }
   }
 
+  function deleteEntryById(entryId) {
+    const key = dateKey(selectedDay);
+    const list = getEntriesForDate(key);
+    const nextList = list.filter((entry) => entry.id !== entryId);
+    const nextMap = { ...entriesByDate };
+    if (nextList.length) nextMap[key] = nextList;
+    else delete nextMap[key];
+    saveEntriesMap(nextMap);
+
+    if (selectedEntryId === entryId) {
+      if (nextList.length) {
+        setSelectedEntryId(nextList[0].id);
+        setDraftEntry(normalizeEntry(nextList[0]));
+      } else {
+        beginNewEntry();
+      }
+    }
+  }
+
+  function handleEntrySwipeStart(entryId, e) {
+    const t = e.changedTouches?.[0];
+    if (!t) return;
+    entrySwipeStartRef.current[entryId] = { x: t.clientX, y: t.clientY };
+  }
+
+  function handleEntrySwipeEnd(entryId, e) {
+    const start = entrySwipeStartRef.current[entryId];
+    const t = e.changedTouches?.[0];
+    if (!start || !t) return;
+    delete entrySwipeStartRef.current[entryId];
+    const dx = t.clientX - start.x;
+    const dy = Math.abs(t.clientY - start.y);
+    if (dx < -70 && dy < 36) {
+      deleteEntryById(entryId);
+    }
+  }
+
   function pinCurrentEntry() {
     if (!selectedEntryId) return;
     setPinnedEntries((prev) => {
@@ -469,10 +509,10 @@ export default function JournalPage() {
         (document.activeElement.tagName === "TEXTAREA" ||
           document.activeElement.tagName === "INPUT");
       if (!inTextArea) {
-        if (e.key === "ArrowLeft") {
+        if (e.key === "ArrowLeft" || e.key === "j" || e.key === "J") {
           setSelectedDay((d) => Math.max(1, d - 1));
         }
-        if (e.key === "ArrowRight") {
+        if (e.key === "ArrowRight" || e.key === "k" || e.key === "K") {
           setSelectedDay((d) => Math.min(daysInMonth, d + 1));
         }
       }
@@ -611,6 +651,49 @@ export default function JournalPage() {
       setDraftEntry(normalizeEntry(list[0]));
     }
   }, [selectedDay, selectedMonth, entriesByDate]);
+
+  useEffect(() => {
+    if (!userId) return;
+    try {
+      const raw = localStorage.getItem(`hibi_word_goal_${userId}`);
+      const parsed = raw ? Number.parseInt(raw, 10) : 0;
+      setWordGoal(Number.isFinite(parsed) ? Math.max(0, parsed) : 0);
+    } catch {
+      setWordGoal(0);
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    try {
+      localStorage.setItem(`hibi_word_goal_${userId}`, String(Math.max(0, wordGoal || 0)));
+    } catch {
+      // ignore storage failures
+    }
+  }, [userId, wordGoal]);
+
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${Math.max(260, ta.scrollHeight)}px`;
+  }, [draftEntry.text, selectedEntryId, selectedDay]);
+
+  useEffect(() => {
+    function handleResizeSidebar(e) {
+      if (!resizingSidebarRef.current) return;
+      setSidebarWidth((prev) => Math.max(170, Math.min(360, prev + e.movementX)));
+    }
+    function stopResizeSidebar() {
+      resizingSidebarRef.current = false;
+    }
+    window.addEventListener("mousemove", handleResizeSidebar);
+    window.addEventListener("mouseup", stopResizeSidebar);
+    return () => {
+      window.removeEventListener("mousemove", handleResizeSidebar);
+      window.removeEventListener("mouseup", stopResizeSidebar);
+    };
+  }, []);
 
   const currentMood = MOOD_TONES.find((m) => m.key === draftEntry.mood) || MOOD_TONES[1];
   // Mix day + month + year for variety across months (not just within month)
@@ -936,7 +1019,7 @@ export default function JournalPage() {
         )}
       </div>
 
-      <div className="hibi-journal-grid" style={{ maxWidth: 1140, margin: "0 auto", display: "grid", gridTemplateColumns: writeWithHibi ? "1fr" : "200px 1fr", gap: 14, alignItems: "start", position: "relative", zIndex: 2 }}>
+      <div className="hibi-journal-grid" style={{ maxWidth: 1140, margin: "0 auto", display: "grid", gridTemplateColumns: writeWithHibi ? "1fr" : `${sidebarWidth}px 10px 1fr`, gap: 14, alignItems: "start", position: "relative", zIndex: 2 }}>
         {!writeWithHibi && (
         <aside
           className="hibi-journal-sidebar"
@@ -951,7 +1034,7 @@ export default function JournalPage() {
             boxShadow: nightMode ? "0 4px 20px rgba(0,0,0,0.4)" : "0 4px 16px rgba(46,125,50,0.08)",
           }}
         >
-          <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: theme.muted }}>Reflection Timeline</p>
+          <p className="hibi-sticky-sidebar-heading" style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: theme.muted }}>Reflection Timeline</p>
 
           <div style={{ display: "flex", gap: 4, marginBottom: 8, alignItems: "center", flexWrap: "wrap" }}>
             <button
@@ -1084,6 +1167,15 @@ export default function JournalPage() {
         </aside>
         )}
 
+        {!writeWithHibi ? (
+          <div
+            className="hibi-journal-sidebar-resizer"
+            onMouseDown={() => { resizingSidebarRef.current = true; }}
+            title="Drag to resize sidebar"
+            style={{ width: 10, cursor: "col-resize", borderRadius: 999, background: nightMode ? "rgba(255,255,255,0.08)" : "rgba(46,125,50,0.14)", alignSelf: "stretch" }}
+          />
+        ) : null}
+
         <section
           className="hibi-journal-entry"
           style={{
@@ -1097,7 +1189,7 @@ export default function JournalPage() {
             transition: "all 0.25s ease",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8, position: "sticky", top: 0, zIndex: 3, background: theme.glass, backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", paddingBottom: 8 }}>
             <p style={{ margin: 0, color: theme.muted, fontWeight: 700, fontSize: 13 }}>{dateKey(selectedDay)}</p>
             <div style={{ display: "flex", gap: 6, position: "relative" }}>
               <button
@@ -1173,6 +1265,8 @@ export default function JournalPage() {
                     <button
                       key={entry.id}
                       onClick={() => selectExistingEntry(entry.id)}
+                      onTouchStart={(e) => handleEntrySwipeStart(entry.id, e)}
+                      onTouchEnd={(e) => handleEntrySwipeEnd(entry.id, e)}
                       title={entry.text || "(empty)"}
                       style={{
                         border: `1.5px solid ${active ? theme.accent : theme.border}`,
@@ -1189,10 +1283,15 @@ export default function JournalPage() {
                         display: "flex",
                         flexDirection: "column",
                         gap: 1,
+                        animation: "hibiSlideRight 0.24s ease both",
+                        animationDelay: `${Math.min(idx * 35, 220)}ms`,
                       }}
                     >
                       <span style={{ fontSize: 10, fontWeight: 700, opacity: 0.6 }}>#{entriesForSelectedDay.length - idx}{entry.starred ? " ★" : ""}{pinnedEntries.has(entry.id) ? " 📌" : ""}</span>
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{preview}{isLong ? "…" : ""}</span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                        {entry.photos?.[0] ? <img src={entry.photos[0]} alt="Entry thumb" style={{ width: 16, height: 16, borderRadius: 4, objectFit: "cover", flexShrink: 0 }} /> : null}
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{preview}{isLong ? "…" : ""}</span>
+                      </span>
                     </button>
                   );
                 })}
@@ -1302,6 +1401,8 @@ export default function JournalPage() {
               lineHeight: 1.45,
               outline: "none",
               boxShadow: nightMode ? "inset 0 1px 2px #00000066" : "inset 0 1px 2px #b9d0ba55",
+              transition: "height 0.18s ease",
+              overflow: "hidden",
             }}
           />
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "6px 0 0", gap: 8, flexWrap: "wrap" }}>

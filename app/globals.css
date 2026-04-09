@@ -442,3 +442,42 @@ button, a {
   /* Calendar — month nav row wraps gracefully on mobile */
   .hibi-cal-month-nav { flex-wrap: wrap !important; justify-content: center !important; }
 }
+
+/* Journal timeline — base slide-in animation */
+.hibi-journal-timeline-list > button {
+  animation: hibiSlideRight 0.22s ease both;
+}
+
+/* Pull-to-refresh indicator */
+@keyframes hibiPullSpin {
+  0%   { transform: translateX(-50%) rotate(0deg); }
+  100% { transform: translateX(-50%) rotate(360deg); }
+}
+.hibi-pull-indicator {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 3px solid rgba(46,125,50,0.25);
+  border-top-color: #2e7d32;
+  animation: hibiPullSpin 0.7s linear infinite;
+  z-index: 999;
+}
+
+/* Sticky sidebar heading in journal */
+.hibi-sticky-sidebar-heading {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: 8px 0 4px;
+  background: inherit;
+}
+
+@media (max-width: 768px) {
+  .hibi-journal-sidebar-resizer {
+    display: none !important;
+  }
+}

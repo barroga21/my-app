@@ -36,6 +36,7 @@ export default function CalendarPage() {
   const [habitList, setHabitList] = useState([]);
   const nightMode = useNightMode();
   const [journalMoodByDate, setJournalMoodByDate] = useState({});
+  const [hoverPreview, setHoverPreview] = useState(null);
 
   const router = useRouter();
   const today = new Date();
@@ -244,6 +245,25 @@ export default function CalendarPage() {
       setText(notes[selectedDate] || "");
     }
   }, [selectedDate, notes]);
+
+  useEffect(() => {
+    function handleKeyNav(e) {
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea") return;
+      if (!selectedDate) return;
+      const curDay = Number(String(selectedDate).split("-")[2] || 1);
+      if (e.key === "j" || e.key === "J") {
+        const nextDay = Math.max(1, curDay - 1);
+        if (nextDay !== curDay) openDay(nextDay);
+      }
+      if (e.key === "k" || e.key === "K") {
+        const nextDay = Math.min(daysInMonth, curDay + 1);
+        if (nextDay !== curDay) openDay(nextDay);
+      }
+    }
+    window.addEventListener("keydown", handleKeyNav);
+    return () => window.removeEventListener("keydown", handleKeyNav);
+  }, [selectedDate, daysInMonth]);
 
   function persistRitual(nextTodos, nextMoods, nextReflections, nextPhotos) {
     writeJSON(ritualStorageKey(userId), {
@@ -655,7 +675,15 @@ export default function CalendarPage() {
                 <button
                   key={date}
                   onClick={() => openDay(day)}
-                  title={notes[date] ? String(notes[date]).slice(0, 80) : undefined}
+                  onMouseEnter={(e) => {
+                    const notePreview = notes[date] ? String(notes[date]).slice(0, 120) : "No note yet";
+                    const moodLabel = (journalMoodByDate[date] || mood.key || "gentle");
+                    setHoverPreview({ x: e.clientX, y: e.clientY, text: `${date} · Mood: ${moodLabel} · Habits: ${doneCount}/${totalHabits || 0} · ${notePreview}` });
+                  }}
+                  onMouseMove={(e) => {
+                    setHoverPreview((prev) => prev ? { ...prev, x: e.clientX, y: e.clientY } : prev);
+                  }}
+                  onMouseLeave={() => setHoverPreview(null)}
                   className="hibi-cal-day-btn"
                   style={{
                     aspectRatio: "1 / 1",
@@ -925,6 +953,29 @@ export default function CalendarPage() {
           </div>
         </aside>
       </div>
+
+      {hoverPreview ? (
+        <div
+          style={{
+            position: "fixed",
+            left: hoverPreview.x + 14,
+            top: Math.max(12, hoverPreview.y + 14),
+            maxWidth: 240,
+            padding: "8px 10px",
+            borderRadius: 10,
+            border: `1px solid ${nightMode ? "rgba(255,255,255,0.14)" : "rgba(46,125,50,0.2)"}`,
+            background: nightMode ? "rgba(10,14,20,0.95)" : "rgba(255,255,255,0.96)",
+            color: nightMode ? "#d7dee8" : "#12361c",
+            fontSize: 12,
+            lineHeight: 1.35,
+            zIndex: 1200,
+            boxShadow: nightMode ? "0 8px 28px rgba(0,0,0,0.5)" : "0 8px 24px rgba(46,125,50,0.18)",
+            pointerEvents: "none",
+          }}
+        >
+          {hoverPreview.text}
+        </div>
+      ) : null}
 
       <style jsx>{`
         .day-card-transition {

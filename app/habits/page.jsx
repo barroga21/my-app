@@ -44,6 +44,7 @@ export default function HabitTracker() {
   const [habitStatsPopover, setHabitStatsPopover] = useState(null);
   const [isMobile, setIsMobile] = useState(false);
   const cellClickTimersRef = useRef({});
+  const habitSwipeStartRef = useRef({});
   const router = useRouter();
   const nightMode = useNightMode();
 
@@ -258,6 +259,30 @@ export default function HabitTracker() {
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, []);
+
+  // Cmd/Ctrl+Enter quickly marks a habit done for the current day.
+  useEffect(() => {
+    function handleQuickToggle(e) {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== "Enter") return;
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea") return;
+      if (!habits.length) return;
+      e.preventDefault();
+
+      const currentDay =
+        viewYear === now.getFullYear() && viewMonth === now.getMonth()
+          ? now.getDate()
+          : Math.min(now.getDate(), daysInMonth);
+
+      const target =
+        (softFocusMode && softFocusHabit)
+          ? softFocusHabit
+          : habits.find((h) => checked[`${h}-${currentDay}`] !== "dot") || habits[0];
+      if (target) toggle(target, currentDay);
+    }
+    window.addEventListener("keydown", handleQuickToggle);
+    return () => window.removeEventListener("keydown", handleQuickToggle);
+  }, [habits, checked, daysInMonth, softFocusMode, softFocusHabit, viewYear, viewMonth]);
 
   // Auto-enter Soft Focus on mobile screens (≤768px)
   useEffect(() => {
@@ -503,6 +528,7 @@ export default function HabitTracker() {
     });
 
     if (next === "dot") {
+      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(30);
       setCompletionPulseKey(key);
       setCompletionCheckKey(key);
       setTimeout(() => setCompletionPulseKey((current) => (current === key ? null : current)), 420);
@@ -802,6 +828,26 @@ export default function HabitTracker() {
       toggle(habit, day);
       delete cellClickTimersRef.current[key];
     }, 180);
+  }
+
+  function handleHabitRowTouchStart(habit, e) {
+    if (!isMobile) return;
+    const t = e.changedTouches?.[0];
+    if (!t) return;
+    habitSwipeStartRef.current[habit] = { x: t.clientX, y: t.clientY };
+  }
+
+  function handleHabitRowTouchEnd(habit, e) {
+    if (!isMobile) return;
+    const start = habitSwipeStartRef.current[habit];
+    const t = e.changedTouches?.[0];
+    if (!start || !t) return;
+    const dx = t.clientX - start.x;
+    const dy = Math.abs(t.clientY - start.y);
+    delete habitSwipeStartRef.current[habit];
+    if (dx < -70 && dy < 36 && editingHabit !== habit) {
+      removeHabit(habit);
+    }
   }
 
   useEffect(() => {
@@ -1689,7 +1735,9 @@ export default function HabitTracker() {
                                 maxWidth: "none",
                                 whiteSpace: "nowrap",
                                 overflow: "visible",
-                              }}>
+                              }}
+                                onTouchStart={(e) => handleHabitRowTouchStart(habit, e)}
+                                onTouchEnd={(e) => handleHabitRowTouchEnd(habit, e)}>
                                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                                   <span style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
                                     <span {...provided.dragHandleProps} style={{ cursor: "grab", color: habitTheme.muted, fontSize: 18, marginRight: 6 }} title="Drag to reorder">≡</span>

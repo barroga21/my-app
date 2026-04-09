@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { TouchEvent, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useNightMode } from "@/lib/useNightMode";
+import { getStoredNightModePreference, setStoredNightModePreference, NIGHT_MODE_OPTIONS } from "@/lib/nightModePreference";
 import NavBar from "@/app/components/NavBar";
 
 const gentlePresences = [
@@ -35,7 +35,10 @@ export default function HomePage() {
   const [oneThingSet, setOneThingSet] = useState(false);
   const [journalStreak, setJournalStreak] = useState(0);
   const [wordsThisMonth, setWordsThisMonth] = useState(0);
-  const router = useRouter();
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const pullStartY = useRef(0);
+  const pullActive = useRef(false);
 
   const now = new Date();
   const year = now.getFullYear();
@@ -197,9 +200,38 @@ export default function HomePage() {
       setQuickHabitList(habitList);
       setQuickChecked(habitsChecks);
     } catch {}
-  }, [userId]);
+  }, [userId, refreshTick]);  // Night mode toggle
+  function toggleNight() {
+    const cur = getStoredNightModePreference();
+    const next = cur === NIGHT_MODE_OPTIONS.ON ? NIGHT_MODE_OPTIONS.OFF
+      : cur === NIGHT_MODE_OPTIONS.OFF ? NIGHT_MODE_OPTIONS.AUTO
+      : NIGHT_MODE_OPTIONS.ON;
+    setStoredNightModePreference(next);
+    try { window.dispatchEvent(new Event("storage")); } catch {}
+  }
 
-  // Load "One Thing" focus from localStorage
+  // Pull-to-refresh handlers
+  function handleTouchStart(e: TouchEvent<HTMLDivElement>) {
+    if (window.scrollY === 0) {
+      pullStartY.current = e.touches[0].clientY;
+      pullActive.current = true;
+    }
+  }
+  function handleTouchMove(e: TouchEvent<HTMLDivElement>) {
+    if (!pullActive.current) return;
+    if (e.touches[0].clientY - pullStartY.current > 80) {
+      setRefreshing(true);
+    }
+  }
+  function handleTouchEnd() {
+    if (refreshing) {
+      setTimeout(() => {
+        setRefreshTick((t) => t + 1);
+        setRefreshing(false);
+      }, 600);
+    }
+    pullActive.current = false;
+  }
   useEffect(() => {
     if (!userId) return;
     const today = new Date();
@@ -242,6 +274,38 @@ export default function HomePage() {
     setOneThingInput("");
   }
 
+  // Weekly summary card — shown on Sundays evening
+  const isSundayEvening = now.getDay() === 0 && now.getHours() >= 17;
+  const weekStats = useMemo(() => {
+    if (!userId || !isSundayEvening) return null;
+    try {
+      const jRaw = localStorage.getItem(`hibi_journal_${userId}_${year}_all`);
+      const jData = jRaw ? JSON.parse(jRaw) : {};
+      const habitsKey = `habit_checks_${userId}_${year}_${String(month + 1).padStart(2, "0")}`;
+      const habitsRaw = localStorage.getItem(habitsKey);
+      const habitsChecksData: Record<string, string> = habitsRaw ? JSON.parse(habitsRaw) : {};
+      const habitListRaw = localStorage.getItem(`habit_list_${userId}`);
+      const habitList: string[] = habitListRaw ? JSON.parse(habitListRaw) : [];
+      let journalDays = 0, habitDays = 0, totalWordsWeek = 0;
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        const dk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        const dayEntries = jData[dk];
+        if (Array.isArray(dayEntries) && dayEntries.length > 0) {
+          journalDays++;
+          (dayEntries as Array<{ text?: string }>).forEach((e) => {
+            const t = (e.text || "").trim();
+            if (t) totalWordsWeek += t.split(/\s+/).length;
+          });
+        }
+        const dayNum = d.getDate();
+        if (habitList.some((h) => habitsChecksData[`${h}-${dayNum}`] === "dot")) habitDays++;
+      }
+      return { journalDays, habitDays, totalWordsWeek };
+    } catch { return null; }
+  }, [userId, isSundayEvening, year, month]);
+
   // Monthly review (last month stats) — shown on 1st of month
   const isFirstOfMonth = now.getDate() === 1;
   const prevMonthLabel = useMemo(() => {
@@ -279,6 +343,7 @@ export default function HomePage() {
 
   // Streak protection nudge — show after 9 PM if habits incomplete
   const showStreakNudge = now.getHours() >= 21 && todayHabitsDone < totalHabits && totalHabits > 0;
+  const allHabitsDone = totalHabits > 0 && todayHabitsDone >= totalHabits;
 
   function toggleQuickHabit(habit: string) {    if (!userId) return;
     const td = new Date();
@@ -384,6 +449,9 @@ export default function HomePage() {
 
   return (
     <main
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
       style={{
         minHeight: "100vh",
         padding: "28px 24px",
@@ -395,6 +463,7 @@ export default function HomePage() {
         animation: "hibiFadeIn 0.35s ease",
       }}
     >
+      {refreshing ? <div className="hibi-pull-indicator" aria-hidden="true" /> : null}
       {/* Streak protection nudge — after 9PM with incomplete habits */}
       {showStreakNudge && (
         <div
@@ -426,6 +495,25 @@ export default function HomePage() {
       )}
       <div style={{ maxWidth: 900, margin: "0 auto 28px" }}>
         <NavBar activePage="home" />
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+          <button
+            type="button"
+            onClick={toggleNight}
+            style={{
+              border: `1px solid ${nightMode ? "rgba(255,255,255,0.12)" : "rgba(46,125,50,0.22)"}`,
+              background: nightMode ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.75)",
+              color: nightMode ? "#d9e3ee" : "#14532d",
+              borderRadius: 999,
+              padding: "6px 12px",
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+            title="Toggle day/night mode (cycles On, Off, Auto)"
+          >
+            Theme
+          </button>
+        </div>
       </div>
 
       <section
@@ -469,19 +557,19 @@ export default function HomePage() {
           </div>
 
           <div className="hibi-home-stat-tiles" style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
-            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px" }}>
+            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px", animation: "hibiFadeIn 0.35s ease", animationDelay: "40ms", animationFillMode: "both" }}>
               <p style={{ margin: "0 0 4px", color: nightMode ? "#6a7a6a" : "#4a7a50", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>Rhythm</p>
               <p style={{ margin: 0, color: nightMode ? "#e9ecef" : "#0d2a14", fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}>{rhythmLabel}</p>
             </div>
-            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px" }}>
+            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px", animation: "hibiFadeIn 0.35s ease", animationDelay: "90ms", animationFillMode: "both" }}>
               <p style={{ margin: "0 0 4px", color: nightMode ? "#6a7a6a" : "#4a7a50", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>Habit Streak</p>
               <p style={{ margin: 0, color: nightMode ? "#e9ecef" : "#0d2a14", fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}>{streak}<span style={{ fontSize: 14, fontWeight: 500, color: nightMode ? "#6a7a6a" : "#4a7a50" }}> day{streak === 1 ? "" : "s"}</span></p>
             </div>
-            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px" }}>
+            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px", animation: "hibiFadeIn 0.35s ease", animationDelay: "140ms", animationFillMode: "both" }}>
               <p style={{ margin: "0 0 4px", color: nightMode ? "#6a7a6a" : "#4a7a50", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>Journal Streak</p>
               <p style={{ margin: 0, color: nightMode ? "#e9ecef" : "#0d2a14", fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}>{journalStreak}<span style={{ fontSize: 14, fontWeight: 500, color: nightMode ? "#6a7a6a" : "#4a7a50" }}> day{journalStreak === 1 ? "" : "s"}</span></p>
             </div>
-            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px" }}>
+            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px", animation: "hibiFadeIn 0.35s ease", animationDelay: "190ms", animationFillMode: "both" }}>
               <p style={{ margin: "0 0 4px", color: nightMode ? "#6a7a6a" : "#4a7a50", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>This Month</p>
               <p style={{ margin: 0, color: nightMode ? "#e9ecef" : "#0d2a14", fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}>{wordsThisMonth >= 1000 ? `${(wordsThisMonth / 1000).toFixed(1)}k` : wordsThisMonth}<span style={{ fontSize: 14, fontWeight: 500, color: nightMode ? "#6a7a6a" : "#4a7a50" }}> words</span></p>
             </div>
@@ -508,7 +596,7 @@ export default function HomePage() {
           </div>
 
           <div className="hibi-home-cta-row" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <Link href="/habits" style={{ textDecoration: "none", background: nightMode ? "#22c55e" : "#1a6e36", color: "#fff", padding: "10px 20px", borderRadius: 999, fontWeight: 700, boxShadow: nightMode ? "0 2px 12px rgba(34,197,94,0.35)" : "0 2px 12px rgba(26,110,54,0.30)", fontSize: 14 }}>
+            <Link href="/habits" style={{ textDecoration: "none", background: nightMode ? "#22c55e" : "#1a6e36", color: "#fff", padding: "10px 20px", borderRadius: 999, fontWeight: 700, boxShadow: nightMode ? "0 2px 12px rgba(34,197,94,0.35)" : "0 2px 12px rgba(26,110,54,0.30)", fontSize: 14, animation: allHabitsDone ? "hibiPulseGreen 1.2s ease infinite" : "none" }}>
               Today&apos;s Habits →
             </Link>
             <Link href="/today" style={{ textDecoration: "none", background: nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.09)", color: nightMode ? "#c9d1da" : "#1a5c1e", padding: "10px 20px", borderRadius: 999, fontWeight: 600, border: `1px solid ${nightMode ? "rgba(255,255,255,0.10)" : "rgba(46,125,50,0.18)"}`, fontSize: 14 }}>
@@ -586,6 +674,40 @@ export default function HomePage() {
           </div>
         )}
       </section>
+
+      {isSundayEvening && weekStats && (
+        <section
+          style={{
+            width: "100%",
+            maxWidth: 820,
+            margin: "16px auto 0",
+            background: nightMode ? "rgba(12,16,22,0.82)" : "rgba(255,255,255,0.80)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
+            border: `1px solid ${nightMode ? "rgba(255,255,255,0.06)" : "rgba(46,125,50,0.11)"}`,
+            borderRadius: 24,
+            boxShadow: nightMode ? "0 8px 40px rgba(0,0,0,0.55)" : "0 8px 40px rgba(46,125,50,0.10)",
+            padding: "24px 28px",
+          }}
+        >
+          <p style={{ margin: "0 0 4px", color: nightMode ? "#6a7a6a" : "#4a7a50", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>🌤 Weekly Recap</p>
+          <h2 style={{ margin: "0 0 14px", fontSize: "clamp(18px, 4vw, 24px)", fontWeight: 800, color: nightMode ? "#e9ecef" : "#0d2a14" }}>This Week</h2>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", borderRadius: 14, padding: "12px 14px", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.10)"}` }}>
+              <p style={{ margin: "0 0 2px", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600, color: nightMode ? "#6a7a6a" : "#4a7a50" }}>Journal Days</p>
+              <p style={{ margin: 0, fontWeight: 800, fontSize: 28, color: nightMode ? "#e9ecef" : "#0d2a14" }}>{weekStats.journalDays}<span style={{ fontSize: 13, fontWeight: 500, color: nightMode ? "#6a7a6a" : "#4a7a50" }}>/7</span></p>
+            </div>
+            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", borderRadius: 14, padding: "12px 14px", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.10)"}` }}>
+              <p style={{ margin: "0 0 2px", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600, color: nightMode ? "#6a7a6a" : "#4a7a50" }}>Habit Days</p>
+              <p style={{ margin: 0, fontWeight: 800, fontSize: 28, color: nightMode ? "#e9ecef" : "#0d2a14" }}>{weekStats.habitDays}<span style={{ fontSize: 13, fontWeight: 500, color: nightMode ? "#6a7a6a" : "#4a7a50" }}>/7</span></p>
+            </div>
+            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", borderRadius: 14, padding: "12px 14px", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.10)"}` }}>
+              <p style={{ margin: "0 0 2px", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600, color: nightMode ? "#6a7a6a" : "#4a7a50" }}>Words</p>
+              <p style={{ margin: 0, fontWeight: 800, fontSize: 28, color: nightMode ? "#e9ecef" : "#0d2a14" }}>{weekStats.totalWordsWeek >= 1000 ? `${(weekStats.totalWordsWeek / 1000).toFixed(1)}k` : weekStats.totalWordsWeek}</p>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Monthly Review Card — shown on 1st of month */}
       {isFirstOfMonth && prevMonthStats && (
