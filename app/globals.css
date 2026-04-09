@@ -3,6 +3,35 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Hibi Design Tokens */
+  --hibi-green-50:  #f0faf0;
+  --hibi-green-100: #d8f0d8;
+  --hibi-green-200: #b3deb3;
+  --hibi-green-500: #2e7d32;
+  --hibi-green-700: #1a5c1e;
+  --hibi-green-900: #0d2a14;
+  --hibi-cream:     #fdf8f0;
+
+  --hibi-radius-sm:  8px;
+  --hibi-radius-md:  14px;
+  --hibi-radius-lg:  20px;
+  --hibi-radius-xl:  28px;
+
+  --hibi-shadow-sm:  0 1px 4px rgba(0,0,0,0.06), 0 2px 8px rgba(46,125,50,0.08);
+  --hibi-shadow-md:  0 4px 16px rgba(0,0,0,0.08), 0 8px 28px rgba(46,125,50,0.10);
+  --hibi-shadow-lg:  0 8px 32px rgba(0,0,0,0.12), 0 16px 48px rgba(46,125,50,0.12);
+  --hibi-shadow-dark-sm: 0 1px 4px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.3);
+  --hibi-shadow-dark-md: 0 4px 20px rgba(0,0,0,0.5), 0 8px 32px rgba(0,0,0,0.4);
+  --hibi-shadow-dark-lg: 0 8px 40px rgba(0,0,0,0.6), 0 16px 56px rgba(0,0,0,0.45);
+
+  --hibi-glass-light: rgba(255,255,255,0.78);
+  --hibi-glass-border-light: rgba(46,125,50,0.12);
+  --hibi-glass-dark: rgba(15,18,24,0.82);
+  --hibi-glass-border-dark: rgba(255,255,255,0.07);
+
+  --hibi-blur: blur(18px);
+  --hibi-blur-sm: blur(8px);
 }
 
 @theme inline {
@@ -19,8 +48,216 @@
   }
 }
 
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  scroll-behavior: smooth;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Polished scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(46,125,50,0.25);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(46,125,50,0.45);
+}
+
+/* Selection */
+::selection {
+  background: rgba(46,125,50,0.22);
+  color: inherit;
+}
+
+/* Animations */
+@keyframes hibiFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes hibiSlideRight {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes hibiPop {
+  0%   { opacity: 0; transform: scale(0.92); }
+  65%  { transform: scale(1.03); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes hibiPulseGreen {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(46,125,50,0.4); }
+  50%       { box-shadow: 0 0 0 8px rgba(46,125,50,0); }
+}
+
+@keyframes hibiShimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes hibiFloat {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-4px); }
+}
+
+@keyframes hibiSkeleton {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* Skeleton screen utility */
+.hibi-skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.04) 25%,
+    rgba(255,255,255,0.10) 50%,
+    rgba(255,255,255,0.04) 75%
+  );
+  background-size: 200% 100%;
+  animation: hibiSkeleton 1.4s ease infinite;
+  border-radius: 8px;
+}
+
+.hibi-skeleton-light {
+  background: linear-gradient(
+    90deg,
+    rgba(46,125,50,0.06) 25%,
+    rgba(46,125,50,0.14) 50%,
+    rgba(46,125,50,0.06) 75%
+  );
+  background-size: 200% 100%;
+  animation: hibiSkeleton 1.4s ease infinite;
+  border-radius: 8px;
+}
+
+/* ─── Focus-visible ring (accessibility) ──────────────────────────── */
+:focus-visible {
+  outline: 2px solid rgba(34, 197, 94, 0.75);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Suppress default focus ring when using mouse */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Horizontal scroll container: fade edge to hint at scrollable content */
+.hibi-scroll-shadow {
+  position: relative;
+}
+.hibi-scroll-shadow::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 32px;
+  background: linear-gradient(to right, transparent, rgba(0,0,0,0.08));
+  pointer-events: none;
+  border-radius: 0 16px 16px 0;
+}
+
+/* Screen-reader only text helper */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ─── Mobile bottom navigation ──────────────────────────────────────── */
+/* Mobile bottom navigation */
+.hibi-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .hibi-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: rgba(8,12,18,0.88);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid rgba(255,255,255,0.07);
+    padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+    justify-content: space-around;
+    align-items: center;
+  }
+
+  .hibi-bottom-nav.light {
+    background: rgba(255,255,255,0.88);
+    border-top: 1px solid rgba(46,125,50,0.12);
+  }
+
+  .hibi-bottom-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    text-decoration: none;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 10px;
+    transition: all 0.15s ease;
+    color: rgba(255,255,255,0.55);
+    border: none;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .hibi-bottom-nav.light .hibi-bottom-nav-item {
+    color: rgba(14,42,20,0.55);
+  }
+
+  .hibi-bottom-nav-item.active {
+    color: #22c55e;
+  }
+
+  .hibi-bottom-nav.light .hibi-bottom-nav-item.active {
+    color: #1a6e36;
+  }
+
+  .hibi-bottom-nav-icon {
+    font-size: 20px;
+    line-height: 1;
+  }
+
+  /* Add bottom padding to main content on mobile so bottom nav doesn't overlap */
+  body {
+    padding-bottom: 72px;
+  }
 }

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import {
@@ -10,6 +9,7 @@ import {
   NIGHT_MODE_OPTIONS,
   setStoredNightModePreference,
 } from "@/lib/nightModePreference";
+import NavBar from "@/app/components/NavBar";
 
 const MOOD_TONES = [
   { key: "warm", label: "Warm", color: "#F4C7A1", tint: "#fff3ea" },
@@ -27,6 +27,21 @@ const DAILY_PROMPTS = [
 ];
 
 const TAG_OPTIONS = ["morning", "relationship", "work", "energy", "gratitude"];
+
+function stripMarkdownPreview(text) {
+  return (text || "").replace(/\*\*(.+?)\*\*/g, "$1").replace(/\*(.+?)\*/g, "$1").replace(/==(.+?)==/g, "$1");
+}
+
+function highlightQueryInText(text, query) {
+  if (!query || !query.trim()) return text;
+  const safe = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const parts = text.split(new RegExp(`(${safe})`, "gi"));
+  return parts.map((part, i) =>
+    part.toLowerCase() === query.toLowerCase()
+      ? <mark key={i} style={{ background: "rgba(251, 211, 10, 0.3)", borderRadius: 2, padding: "0 1px" }}>{part}</mark>
+      : part
+  );
+}
 const WRITE_GUIDES = [
   "Start with one true sentence.",
   "What are you carrying right now?",
@@ -34,7 +49,26 @@ const WRITE_GUIDES = [
   "What do you want to release before sleep?",
 ];
 
-const YEAR = 2026;
+const TEMPLATES = [
+  {
+    label: "🌅 Morning Pages",
+    text: "This morning I feel...\n\nI am grateful for...\n\nOne intention for today:\n\n",
+  },
+  {
+    label: "🙏 Gratitude",
+    text: "Three things I am grateful for today:\n1. \n2. \n3. \n\nWhy these matter to me:\n\n",
+  },
+  {
+    label: "🌙 Evening Review",
+    text: "How today went:\n\nWhat I learned or noticed:\n\nWhat I want to carry into tomorrow:\n\n",
+  },
+  {
+    label: "📅 Weekly Reflect",
+    text: "The theme of this week was...\n\nWhat went well:\n\nWhat challenged me:\n\nWhat I want to focus on next week:\n\n",
+  },
+];
+
+// YEAR is now a component-level state (selectedYear) to support year navigation
 
 function makeEmptyEntry() {
   return {
@@ -44,6 +78,7 @@ function makeEmptyEntry() {
     tags: [],
     photos: [],
     hibiNote: "",
+    starred: false,
     updatedAt: null,
   };
 }
@@ -56,6 +91,7 @@ function normalizeEntry(raw) {
     tags: Array.isArray(raw?.tags) ? raw.tags : [],
     photos: Array.isArray(raw?.photos) ? raw.photos : [],
     hibiNote: typeof raw?.hibiNote === "string" ? raw.hibiNote : "",
+    starred: raw?.starred === true,
     updatedAt: typeof raw?.updatedAt === "number" ? raw.updatedAt : null,
   };
 }
@@ -86,12 +122,17 @@ export default function JournalPage() {
   const [userId, setUserId] = useState(null);
 
   const now = new Date();
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
   const [selectedDay, setSelectedDay] = useState(now.getDate());
 
   const [entriesByDate, setEntriesByDate] = useState({});
   const [selectedEntryId, setSelectedEntryId] = useState(null);
   const [draftEntry, setDraftEntry] = useState(makeEmptyEntry());
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [customTagInput, setCustomTagInput] = useState("");
+  const [pinnedEntries, setPinnedEntries] = useState(new Set());
+  const [pinnedFilter, setPinnedFilter] = useState(false);
 
   const [writeWithHibi, setWriteWithHibi] = useState(false);
   const [nightModePreference, setNightModePreference] = useState(NIGHT_MODE_OPTIONS.AUTO);
@@ -99,32 +140,42 @@ export default function JournalPage() {
 
   const [calendarPhotosByDate, setCalendarPhotosByDate] = useState({});
   const [habitChecks, setHabitChecks] = useState({});
+  const [searchQuery, setSearchQuery] = useState("");
+  const [starFilter, setStarFilter] = useState(false);
+  const [tagFilter, setTagFilter] = useState(null);
+  const [wordGoal, setWordGoal] = useState(0);
+  const [unsavedChanges, setUnsavedChanges] = useState(false);
+  const [saveFlash, setSaveFlash] = useState(false);
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const autoSaveTimerRef = useRef(null);
+  // Ref always pointing to the latest saveEntry — prevents stale closure in auto-save/keyboard effects
+  const saveEntryRef = useRef(null);
 
-  const daysInMonth = new Date(YEAR, selectedMonth + 1, 0).getDate();
+  const daysInMonth = new Date(selectedYear, selectedMonth + 1, 0).getDate();
   const nightMode = isNightModeEnabled(nightModePreference, new Date(autoNightTimestamp));
 
   function dateKey(day, month = selectedMonth) {
-    return `${YEAR}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    return `${selectedYear}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   }
 
   function journalStorageKey(activeUserId) {
-    return `hibi_journal_${activeUserId || "guest"}_${YEAR}_all`;
+    return `hibi_journal_${activeUserId || "guest"}_${selectedYear}_all`;
   }
 
   function legacyJournalStorageKey(activeUserId, month) {
-    return `hibi_journal_${activeUserId || "guest"}_${YEAR}_${String(month + 1).padStart(2, "0")}`;
+    return `hibi_journal_${activeUserId || "guest"}_${selectedYear}_${String(month + 1).padStart(2, "0")}`;
   }
 
   function calendarRitualKey(activeUserId, month) {
-    return `calendar_ritual_${activeUserId || "guest"}_${YEAR}_${String(month + 1).padStart(2, "0")}`;
+    return `calendar_ritual_${activeUserId || "guest"}_${selectedYear}_${String(month + 1).padStart(2, "0")}`;
   }
 
   function habitStorageKey(activeUserId, month) {
-    return `habit_checks_${activeUserId || "guest"}_${YEAR}_${String(month + 1).padStart(2, "0")}`;
+    return `habit_checks_${activeUserId || "guest"}_${selectedYear}_${String(month + 1).padStart(2, "0")}`;
   }
 
   function habitBackupStorageKey(activeUserId, month) {
-    return `hibi_habit_checks_backup_${activeUserId || "guest"}_${YEAR}_${String(month + 1).padStart(2, "0")}`;
+    return `hibi_habit_checks_backup_${activeUserId || "guest"}_${selectedYear}_${String(month + 1).padStart(2, "0")}`;
   }
 
   function safeRead(key, fallback) {
@@ -150,12 +201,38 @@ export default function JournalPage() {
     const trimmed = (text || "").trim();
     if (!trimmed) return "A quiet page can still hold a real feeling.";
 
-    if (mood === "warm") return "You sound grounded and warm today.";
-    if (mood === "cool") return "There is a soft reflective tone in your words.";
-    if (mood === "deep") return "You carried a lot today, and you gave it language.";
-    if (tags.includes("gratitude")) return "There is gratitude here, and it brightens the entry.";
-    if (trimmed.length > 350) return "You went deeper today. There is care in this reflection.";
-    return "Your energy feels steady and returning.";
+    const wordCount = trimmed.split(/\s+/).length;
+    const hasTags = tags && tags.length > 0;
+    const questionCount = (trimmed.match(/\?/g) || []).length;
+    const exclamationCount = (trimmed.match(/!/g) || []).length;
+    const hasI = /\bI\b/.test(trimmed);
+
+    if (mood === "warm" && wordCount > 150) return "Your warmth fills these words. Something good is being tended to here.";
+    if (mood === "warm") return "You sound grounded and warm today. That steadiness matters.";
+    if (mood === "cool" && questionCount >= 2) return "The questions you are sitting with are worth the time you are giving them.";
+    if (mood === "cool") return "There is a soft, reflective tone in your words today.";
+    if (mood === "deep" && wordCount > 200) return "You went to a deep place today. Writing like this takes real courage.";
+    if (mood === "deep") return "You carried something heavy today and you gave it language. That is not small.";
+    if (mood === "hopeful") return "There is something light in this entry — a small forward lean. Hold that.";
+    if (mood === "heavy") return "Some days are hard to hold. You wrote through it anyway. That counts.";
+    if (mood === "light") return "A lighter day lives here. It is good to notice those.";
+
+    if (tags.includes("gratitude") && wordCount > 80) return "The gratitude in this entry is detailed and specific. That is the kind that sticks.";
+    if (tags.includes("gratitude")) return "There is gratitude here, and it brightens the page.";
+    if (tags.includes("anxiety")) return "Naming what feels anxious takes the edge off it slightly. You are doing that.";
+    if (tags.includes("growth")) return "Something shifted today and you noticed it. That noticing is growth itself.";
+    if (tags.includes("relationships")) return "The people in your life are woven through this entry. They matter to you.";
+    if (tags.includes("work")) return "You gave real thought to the work side of life today. That reflection adds up.";
+    if (tags.includes("health")) return "You are paying attention to your body and energy. That is a form of self-care.";
+
+    if (exclamationCount >= 3) return "There is energy in this entry — something moved you today.";
+    if (questionCount >= 3) return "You are sitting with a lot of open questions. That is a sign of a curious, searching mind.";
+    if (wordCount > 300 && hasI) return "You went deep today. There is real self-awareness in how you wrote this.";
+    if (wordCount > 300) return "You gave this entry real space and time. That depth shows.";
+    if (wordCount < 30) return "Short today, and that is perfectly enough. Sometimes a line holds everything.";
+    if (hasTags) return "You labelled this moment. That small act of naming helps you find it later.";
+
+    return "Your energy feels steady. Something in this entry is worth returning to.";
   }
 
   function getEntriesForDate(date) {
@@ -165,6 +242,15 @@ export default function JournalPage() {
   function saveEntriesMap(nextMap) {
     setEntriesByDate(nextMap);
     safeWrite(journalStorageKey(userId), nextMap);
+    // Supabase background sync — best-effort, non-blocking
+    if (supabase && userId) {
+      Object.entries(nextMap).forEach(([date, entries]) => {
+        supabase
+          .from("journal_entries")
+          .upsert({ user_id: userId, date, entries, updated_at: new Date().toISOString() }, { onConflict: "user_id,date" })
+          .then(() => {/* silent */});
+      });
+    }
   }
 
   function beginNewEntry() {
@@ -181,6 +267,7 @@ export default function JournalPage() {
   }
 
   function saveEntry() {
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     const cleanedText = (draftEntry.text || "").trim();
     const hasContent = cleanedText || draftEntry.photos.length || draftEntry.tags.length;
     if (!hasContent) return;
@@ -191,6 +278,7 @@ export default function JournalPage() {
     const finalEntry = {
       ...normalizeEntry(draftEntry),
       text: draftEntry.text,
+      starred: draftEntry.starred,
       updatedAt: Date.now(),
       hibiNote: generateHibiNote(draftEntry.text, draftEntry.mood, draftEntry.tags || []),
     };
@@ -210,9 +298,20 @@ export default function JournalPage() {
     saveEntriesMap(nextMap);
     setSelectedEntryId(finalEntry.id);
     setDraftEntry(finalEntry);
+    setUnsavedChanges(false);
+    setSaveFlash(true);
+    setTimeout(() => setSaveFlash(false), 1200);
   }
 
+  // Keep saveEntryRef pointed at the latest saveEntry every render (stale closure fix)
+  saveEntryRef.current = saveEntry;
+
   function deleteCurrentEntry() {
+    if (!deleteConfirm) {
+      setDeleteConfirm(true);
+      return;
+    }
+    setDeleteConfirm(false);
     if (!selectedEntryId) return;
 
     const key = dateKey(selectedDay);
@@ -233,6 +332,53 @@ export default function JournalPage() {
       setDraftEntry(normalizeEntry(nextList[0]));
     } else {
       beginNewEntry();
+    }
+  }
+
+  function pinCurrentEntry() {
+    if (!selectedEntryId) return;
+    setPinnedEntries((prev) => {
+      const next = new Set(prev);
+      if (next.has(selectedEntryId)) {
+        next.delete(selectedEntryId);
+      } else {
+        next.add(selectedEntryId);
+      }
+      return next;
+    });
+  }
+
+  function exportEntries() {
+    let md = `# Hibi Journal — ${monthNames[selectedMonth]} ${selectedYear}\n\n`;
+    for (let day = 1; day <= daysInMonth; day++) {
+      const list = getEntriesForDate(dateKey(day));
+      if (!list.length) continue;
+      md += `## ${dateKey(day)}\n\n`;
+      list.forEach((entry, i) => {
+        if (entry.starred) md += `★ `;
+        if (entry.mood) md += `**Mood:** ${entry.mood}  \n`;
+        if ((entry.tags || []).length) md += `**Tags:** ${entry.tags.map((t) => `#${t}`).join(" ")}  \n`;
+        md += `\n${entry.text || ""}\n\n`;
+        if (i < list.length - 1) md += `---\n\n`;
+      });
+    }
+    const blob = new Blob([md], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `hibi-journal-${selectedYear}-${String(selectedMonth + 1).padStart(2, "0")}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function starCurrentEntry() {
+    const nextStarred = !draftEntry.starred;
+    setDraftEntry((prev) => ({ ...prev, starred: nextStarred }));
+    if (selectedEntryId) {
+      const key = dateKey(selectedDay);
+      const list = getEntriesForDate(key);
+      const nextList = list.map((e) => e.id === selectedEntryId ? { ...e, starred: nextStarred } : e);
+      saveEntriesMap({ ...entriesByDate, [key]: nextList });
     }
   }
 
@@ -289,6 +435,52 @@ export default function JournalPage() {
     }));
   }
 
+  // Auto-save debounce (3s after last change) — uses ref so it always calls the latest saveEntry
+  useEffect(() => {
+    const hasContent = (draftEntry.text || "").trim() || draftEntry.photos.length || draftEntry.tags.length;
+    if (!hasContent) { setUnsavedChanges(false); return; }
+    setUnsavedChanges(true);
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      // Regenerate hibiNote on auto-save so it stays current
+      if (draftEntry.text && (draftEntry.text || "").trim()) {
+        const freshNote = generateHibiNote(draftEntry.text, draftEntry.mood, draftEntry.tags || []);
+        setDraftEntry((prev) => ({ ...prev, hibiNote: freshNote }));
+      }
+      saveEntryRef.current?.();
+    }, 3000);
+    return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftEntry.text, draftEntry.mood, draftEntry.tags, draftEntry.photos]);
+
+  // Cmd/Ctrl+S, Cmd/Ctrl+N, ArrowLeft/Right
+  useEffect(() => {
+    function onKeyDown(e) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+        e.preventDefault();
+        saveEntryRef.current?.();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "n") {
+        e.preventDefault();
+        beginNewEntry();
+      }
+      const inTextArea =
+        document.activeElement &&
+        (document.activeElement.tagName === "TEXTAREA" ||
+          document.activeElement.tagName === "INPUT");
+      if (!inTextArea) {
+        if (e.key === "ArrowLeft") {
+          setSelectedDay((d) => Math.max(1, d - 1));
+        }
+        if (e.key === "ArrowRight") {
+          setSelectedDay((d) => Math.min(daysInMonth, d + 1));
+        }
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [daysInMonth]);
+
   useEffect(() => {
     let unsubscribe = null;
 
@@ -341,7 +533,30 @@ export default function JournalPage() {
 
     setEntriesByDate(normalized);
     safeWrite(allKey, normalized);
-  }, [userId]);
+
+    // Supabase remote pull — merge remote entries (local wins for same date if both present)
+    if (supabase && userId) {
+      supabase
+        .from("journal_entries")
+        .select("date, entries")
+        .eq("user_id", userId)
+        .then(({ data }) => {
+          if (!data || !data.length) return;
+          const remote = {};
+          data.forEach(({ date, entries }) => {
+            if (Array.isArray(entries)) {
+              remote[date] = entries.map((e) => normalizeEntry(e));
+            }
+          });
+          setEntriesByDate((prev) => {
+            // Merge: local dates win, remote fills in missing dates
+            const merged = { ...remote, ...prev };
+            safeWrite(journalStorageKey(userId), merged);
+            return merged;
+          });
+        });
+    }
+  }, [userId, selectedYear]);
 
   useEffect(() => {
     setNightModePreference(getStoredNightModePreference());
@@ -374,7 +589,7 @@ export default function JournalPage() {
     const primaryHabits = safeRead(habitStorageKey(userId, selectedMonth), {});
     const backupHabits = safeRead(habitBackupStorageKey(userId, selectedMonth), {});
     setHabitChecks({ ...backupHabits, ...primaryHabits });
-  }, [userId, selectedMonth]);
+  }, [userId, selectedMonth, selectedYear]);
 
   useEffect(() => {
     if (selectedDay > daysInMonth) {
@@ -398,26 +613,33 @@ export default function JournalPage() {
   }, [selectedDay, selectedMonth, entriesByDate]);
 
   const currentMood = MOOD_TONES.find((m) => m.key === draftEntry.mood) || MOOD_TONES[1];
-  const prompt = DAILY_PROMPTS[(selectedDay - 1) % DAILY_PROMPTS.length];
+  // Mix day + month + year for variety across months (not just within month)
+  const prompt = DAILY_PROMPTS[(selectedMonth * 31 + selectedDay - 1) % DAILY_PROMPTS.length];
 
   const theme = nightMode
     ? {
-        page: "linear-gradient(165deg, #0f1113 0%, #15181c 50%, #1c2025 100%)",
-        text: "#e9ecef",
-        panel: "#171a1f",
-        muted: "#b6bdc7",
-        border: "#2b3139",
-        input: "#111418",
-        accent: "#7f8b9a",
+        page: "linear-gradient(145deg, #070b0d 0%, #0c1117 35%, #101820 70%, #0e1a14 100%)",
+        text: "#dde3ea",
+        panel: "rgba(12,16,22,0.82)",
+        muted: "#6a8a70",
+        border: "rgba(255,255,255,0.07)",
+        input: "rgba(7,10,15,0.9)",
+        accent: "#22c55e",
+        accentText: "#0d2a14",
+        glass: "rgba(12,16,22,0.82)",
+        glassBorder: "rgba(255,255,255,0.07)",
       }
     : {
-        page: `linear-gradient(160deg, ${currentMood.tint} 0%, #eef7ee 62%, #deeedf 100%)`,
-        text: "#14532d",
-        panel: "#f6fbf5",
-        muted: "#2e7d32",
-        border: "#c5dec6",
-        input: "#ffffff",
-        accent: "#2e7d32",
+        page: `linear-gradient(145deg, ${currentMood.tint} 0%, #eef7e8 50%, #e0f0da 100%)`,
+        text: "#0d2a14",
+        panel: "rgba(255,255,255,0.82)",
+        muted: "#4a7a50",
+        border: "rgba(46,125,50,0.12)",
+        input: "rgba(255,255,255,0.95)",
+        accent: "#1a6e36",
+        accentText: "#fff",
+        glass: "rgba(255,255,255,0.82)",
+        glassBorder: "rgba(46,125,50,0.12)",
       };
 
   const monthNames = [
@@ -459,7 +681,7 @@ export default function JournalPage() {
   }, [calendarPhotosByDate, selectedMonth, daysInMonth]);
 
   const weeklySummary = useMemo(() => {
-    const currentDate = new Date(YEAR, selectedMonth, selectedDay);
+    const currentDate = new Date(selectedYear, selectedMonth, selectedDay);
     const weekStart = selectedDay - currentDate.getDay();
     const weekDays = Array.from({ length: 7 }, (_, i) => weekStart + i).filter((d) => d >= 1 && d <= daysInMonth);
 
@@ -497,18 +719,100 @@ export default function JournalPage() {
     return "Your week moved softly, with writing on your steadier days.";
   }, [entriesByDate, habitChecks, selectedDay, selectedMonth]);
 
+  const filteredJournaledDays = useMemo(() => {
+    let days = journaledDays;
+    if (starFilter) {
+      days = days.filter(({ day }) =>
+        getEntriesForDate(dateKey(day)).some((e) => e.starred)
+      );
+    }
+    if (pinnedFilter) {
+      days = days.filter(({ day }) =>
+        getEntriesForDate(dateKey(day)).some((e) => pinnedEntries.has(e.id))
+      );
+    }
+    if (tagFilter) {
+      days = days.filter(({ day }) =>
+        getEntriesForDate(dateKey(day)).some((e) => (e.tags || []).includes(tagFilter))
+      );
+    }
+    if (!searchQuery.trim()) return days;
+    const q = searchQuery.toLowerCase();
+    return days.filter(({ day }) =>
+      getEntriesForDate(dateKey(day)).some(
+        (e) => (e.text || "").toLowerCase().includes(q) || (e.tags || []).some((t) => t.toLowerCase().includes(q))
+      )
+    );
+  }, [journaledDays, searchQuery, starFilter, tagFilter, pinnedFilter, pinnedEntries, entriesByDate, selectedMonth]);
+
+  const last7MoodDots = useMemo(() => {
+    const today = new Date();
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(today);
+      d.setDate(d.getDate() - (6 - i));
+      const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const entries = entriesByDate[k] || [];
+      return { key: k, day: d.getDate(), mood: entries[0]?.mood || null };
+    });
+  }, [entriesByDate]);
+
+  const monthlyReflection = useMemo(() => {
+    let totalEntries = 0;
+    let totalWords = 0;
+    const tagCounts = {};
+    for (let day = 1; day <= daysInMonth; day++) {
+      getEntriesForDate(dateKey(day)).forEach((entry) => {
+        totalEntries++;
+        totalWords += (entry.text || "").trim().split(/\s+/).filter(Boolean).length;
+        (entry.tags || []).forEach((tag) => { tagCounts[tag] = (tagCounts[tag] || 0) + 1; });
+      });
+    }
+    const topTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([tag]) => tag);
+    return { totalEntries, totalWords, topTags };
+  }, [entriesByDate, selectedMonth, daysInMonth]);
+
+  const allTagsInMonth = useMemo(() => {
+    const tags = new Set();
+    for (let day = 1; day <= daysInMonth; day++) {
+      getEntriesForDate(dateKey(day)).forEach((entry) => {
+        (entry.tags || []).forEach((t) => tags.add(t));
+      });
+    }
+    return Array.from(tags);
+  }, [entriesByDate, selectedMonth, daysInMonth]);
+
+  // Mood timeline: map mood keys to numeric values for SVG line chart
+  const MOOD_VALUES = { warm: 5, neutral: 4, steady: 3, cool: 2, deep: 1 };
+  const moodTimelinePoints = useMemo(() => {
+    return journaledDays
+      .map(({ day, mood }) => ({ day, value: MOOD_VALUES[mood] || 3 }))
+      .filter(({ value }) => value !== undefined);
+  }, [journaledDays]);
+
   if (!authReady) {
     return (
       <main
         style={{
-          padding: 24,
+          padding: "28px 24px",
           minHeight: "100vh",
-          background: "linear-gradient(150deg, #fdf6ec 0%, #e8f5e9 55%, #c8e6c9 100%)",
-          fontFamily: "system-ui, sans-serif",
-          color: "#14532d",
+          background: nightMode
+            ? "linear-gradient(145deg, #070b0d 0%, #0c1117 35%, #101820 70%, #0e1a14 100%)"
+            : "linear-gradient(145deg, #f7fbf4 0%, #eef7e8 40%, #e0f0da 75%, #d4ead4 100%)",
+          fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif",
         }}
       >
-        Loading your journal...
+        <div style={{ maxWidth: 900, margin: "0 auto", display: "flex", gap: 20, paddingTop: 60 }}>
+          <div style={{ width: 240, display: "grid", gap: 12, flexShrink: 0 }}>
+            <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 36, borderRadius: 12 }} />
+            <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 180, borderRadius: 16 }} />
+            <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 80, borderRadius: 16 }} />
+          </div>
+          <div style={{ flex: 1, display: "grid", gap: 12 }}>
+            <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 48, borderRadius: 12 }} />
+            <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 260, borderRadius: 16 }} />
+            <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 40, borderRadius: 12 }} />
+          </div>
+        </div>
       </main>
     );
   }
@@ -516,13 +820,14 @@ export default function JournalPage() {
   return (
     <main
       style={{
-        padding: 24,
+        padding: "28px 24px",
         minHeight: "100vh",
         background: theme.page,
-        fontFamily: "system-ui, sans-serif",
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif",
         color: theme.text,
         position: "relative",
-        transition: "background 0.35s ease",
+        transition: "background 0.4s ease",
+        animation: "hibiFadeIn 0.35s ease",
       }}
     >
       {writeWithHibi ? (
@@ -530,86 +835,58 @@ export default function JournalPage() {
           style={{
             position: "fixed",
             inset: 0,
-            background: nightMode ? "rgba(0,0,0,0.5)" : "rgba(10,16,12,0.45)",
+            background: nightMode ? "rgba(0,0,0,0.7)" : "rgba(10,16,12,0.65)",
             pointerEvents: "none",
             zIndex: 1,
           }}
         />
       ) : null}
 
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 10,
-          marginBottom: 18,
-          position: "relative",
-          zIndex: 2,
-        }}
-      >
-        <Link
-          href="/"
-          style={{
-            position: "absolute",
-            left: 0,
-            top: "50%",
-            transform: "translateY(-50%)",
-            textDecoration: "none",
-            color: theme.text,
-            fontWeight: 900,
-            fontSize: 28,
-            letterSpacing: 1.5,
-            paddingLeft: 12,
-            userSelect: "none",
-          }}
-        >
-          Hibi
-        </Link>
-        <Link href="/calendar" style={{ textDecoration: "none", background: nightMode ? "#1c2127" : "#e8f5e9", color: theme.text, padding: "10px 16px", borderRadius: 10, fontWeight: 700, border: `1.5px solid ${theme.border}` }}>
-          Calendar
-        </Link>
-        <Link href="/habits" style={{ textDecoration: "none", background: nightMode ? "#1c2127" : "#e8f5e9", color: theme.text, padding: "10px 16px", borderRadius: 10, fontWeight: 700, border: `1.5px solid ${theme.border}` }}>
-          Habit Tracker
-        </Link>
-        <Link href="/journal" style={{ textDecoration: "none", background: nightMode ? "#2b3139" : "#2e7d32", color: "#fff", padding: "10px 16px", borderRadius: 10, fontWeight: 700, boxShadow: nightMode ? "0 2px 8px #00000088" : "0 2px 8px #2e7d3240" }}>
-          Journal
-        </Link>
-        <Link href="/profile" style={{ textDecoration: "none", background: nightMode ? "#1c2127" : "#e8f5e9", color: theme.text, padding: "10px 16px", borderRadius: 10, fontWeight: 700, border: `1.5px solid ${theme.border}` }}>
-          Profile
-        </Link>
-        <button
-          onClick={async () => {
-            if (supabase) await supabase.auth.signOut();
-            router.replace("/login");
-          }}
-          style={{ textDecoration: "none", background: nightMode ? "#1c2127" : "#e8f5e9", color: theme.text, padding: "10px 16px", borderRadius: 10, fontWeight: 700, border: `1.5px solid ${theme.border}`, cursor: "pointer" }}
-        >
-          Log Out
-        </button>
+      <div style={{ position: "relative", zIndex: 2 }}>
+        <NavBar activePage="journal" />
       </div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 1140, margin: "0 auto 10px", zIndex: 2, position: "relative", gap: 12, flexWrap: "wrap" }}>
-        <h1 style={{ margin: 0, fontSize: 36, letterSpacing: 1, color: theme.text, fontWeight: 800 }}>Journal</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 1140, margin: "0 auto 12px", zIndex: 2, position: "relative", gap: 12, flexWrap: "wrap" }}>
+        <h1 style={{ margin: 0, fontSize: "clamp(28px, 5vw, 40px)", letterSpacing: -0.5, color: theme.text, fontWeight: 800 }}>Journal</h1>
 
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {/* Year navigation */}
+          <button
+            type="button"
+            onClick={() => setSelectedYear((y) => y - 1)}
+            aria-label="Previous year"
+            style={{ border: `1px solid ${theme.border}`, background: theme.panel, color: theme.text, borderRadius: 8, padding: "7px 8px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}
+          >
+            ‹{selectedYear - 1}
+          </button>
           <select
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(Number(e.target.value))}
             style={{ border: `1px solid ${theme.border}`, background: theme.panel, color: theme.text, borderRadius: 8, padding: "7px 8px", fontWeight: 700 }}
           >
             {monthNames.map((name, idx) => (
-              <option key={name} value={idx}>{name} {YEAR}</option>
+              <option key={name} value={idx}>{name} {selectedYear}</option>
             ))}
           </select>
+          <button
+            type="button"
+            onClick={() => setSelectedYear((y) => Math.min(y + 1, now.getFullYear() + 1))}
+            aria-label="Next year"
+            style={{ border: `1px solid ${theme.border}`, background: theme.panel, color: theme.text, borderRadius: 8, padding: "7px 8px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}
+          >
+            {selectedYear + 1}›
+          </button>
           <select
             value={selectedDay}
             onChange={(e) => setSelectedDay(Number(e.target.value))}
             style={{ border: `1px solid ${theme.border}`, background: theme.panel, color: theme.text, borderRadius: 8, padding: "7px 8px", fontWeight: 700 }}
           >
-            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => (
-              <option key={`day-opt-${day}`} value={day}>Day {day}</option>
-            ))}
+            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
+              const hasEntry = getEntriesForDate(dateKey(day)).length > 0;
+              return (
+                <option key={`day-opt-${day}`} value={day}>{hasEntry ? "● " : ""}Day {day}</option>
+              );
+            })}
           </select>
 
           <button
@@ -617,7 +894,16 @@ export default function JournalPage() {
             onClick={() => setWriteWithHibi((v) => !v)}
             style={{ border: `1px solid ${theme.border}`, background: writeWithHibi ? theme.accent : theme.panel, color: writeWithHibi ? "#fff" : theme.text, borderRadius: 999, padding: "7px 12px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}
           >
-            Write With Hibi
+            {writeWithHibi ? "✦ Focus On" : "Write With Hibi"}
+          </button>
+          <button
+            type="button"
+            onClick={exportEntries}
+            title={`Export ${monthNames[selectedMonth]} ${selectedYear} as Markdown`}
+            aria-label={`Export journal entries for ${monthNames[selectedMonth]} ${selectedYear}`}
+            style={{ border: `1px solid ${theme.border}`, background: theme.panel, color: theme.text, borderRadius: 999, padding: "7px 12px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}
+          >
+            ↓ Export
           </button>
           <select
             value={nightModePreference}
@@ -635,27 +921,80 @@ export default function JournalPage() {
         </div>
       </div>
 
-      <div style={{ maxWidth: 1140, margin: "0 auto", display: "grid", gridTemplateColumns: "170px 1fr", gap: 14, alignItems: "start", position: "relative", zIndex: 2 }}>
+      <div style={{ maxWidth: 1140, margin: "0 auto 12px", position: "relative", zIndex: 2 }}>
+        <input
+          type="search"
+          placeholder="Search entries by keyword or tag…"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          style={{ width: "100%", padding: "10px 44px 10px 16px", borderRadius: 999, border: `1px solid ${theme.glassBorder}`, background: theme.glass, backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", color: theme.text, fontSize: 14, outline: "none", boxSizing: "border-box", boxShadow: nightMode ? "0 2px 10px rgba(0,0,0,0.3)" : "0 2px 10px rgba(46,125,50,0.07)", transition: "box-shadow 0.2s ease" }}
+        />
+        {searchQuery && (
+          <button onClick={() => setSearchQuery("")} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", border: "none", background: "transparent", color: theme.muted, cursor: "pointer", fontWeight: 700, fontSize: 18, lineHeight: 1 }}>×</button>
+        )}
+      </div>
+
+      <div style={{ maxWidth: 1140, margin: "0 auto", display: "grid", gridTemplateColumns: writeWithHibi ? "1fr" : "200px 1fr", gap: 14, alignItems: "start", position: "relative", zIndex: 2 }}>
+        {!writeWithHibi && (
         <aside
           style={{
-            background: theme.panel,
-            border: `1px solid ${theme.border}`,
-            borderRadius: 14,
-            padding: 12,
+            background: theme.glass,
+            backdropFilter: "blur(18px)",
+            WebkitBackdropFilter: "blur(18px)",
+            border: `1px solid ${theme.glassBorder}`,
+            borderRadius: 18,
+            padding: 14,
             minHeight: 320,
+            boxShadow: nightMode ? "0 4px 20px rgba(0,0,0,0.4)" : "0 4px 16px rgba(46,125,50,0.08)",
           }}
         >
           <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: theme.muted }}>Reflection Timeline</p>
 
+          <div style={{ display: "flex", gap: 4, marginBottom: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <button
+              onClick={() => { setStarFilter(false); setPinnedFilter(false); }}
+              style={{ border: `1px solid ${theme.border}`, background: !starFilter && !pinnedFilter ? theme.accent : "transparent", color: !starFilter && !pinnedFilter ? "#fff" : theme.muted, borderRadius: 999, padding: "2px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+            >All</button>
+            <button
+              onClick={() => { setStarFilter(true); setPinnedFilter(false); }}
+              style={{ border: `1px solid ${theme.border}`, background: starFilter ? theme.accent : "transparent", color: starFilter ? "#fff" : theme.muted, borderRadius: 999, padding: "2px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+            >★ Starred</button>
+            <button
+              onClick={() => { setPinnedFilter((v) => !v); setStarFilter(false); }}
+              style={{ border: `1px solid ${theme.border}`, background: pinnedFilter ? theme.accent : "transparent", color: pinnedFilter ? "#fff" : theme.muted, borderRadius: 999, padding: "2px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+            >📌 Pinned</button>
+          </div>
+
+          {allTagsInMonth.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginBottom: 8 }}>
+              <button
+                onClick={() => setTagFilter(null)}
+                style={{ border: `1px solid ${theme.border}`, background: tagFilter === null ? (nightMode ? "rgba(255,255,255,0.10)" : "rgba(46,125,50,0.14)") : "transparent", color: theme.muted, borderRadius: 999, padding: "2px 7px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
+              >
+                All tags
+              </button>
+              {allTagsInMonth.map((tag) => (
+                <button
+                  key={tag}
+                  onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
+                  style={{ border: `1px solid ${theme.border}`, background: tagFilter === tag ? theme.accent : "transparent", color: tagFilter === tag ? "#fff" : theme.muted, borderRadius: 999, padding: "2px 7px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}
+                >
+                  #{tag}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div style={{ position: "relative", paddingLeft: 16 }}>
-            {journaledDays.length > 1 ? (
+            {filteredJournaledDays.length > 1 ? (
               <div style={{ position: "absolute", left: 18, top: 10, bottom: 10, width: 1.5, background: nightMode ? "#353c46" : "#b9d2ba" }} />
             ) : null}
 
             <div style={{ display: "grid", gap: 10 }}>
-              {journaledDays.map((item) => {
+              {filteredJournaledDays.map((item) => {
                 const mood = MOOD_TONES.find((m) => m.key === item.mood) || MOOD_TONES[1];
                 const active = item.day === selectedDay;
+                const isStarred = getEntriesForDate(dateKey(item.day)).some((e) => e.starred);
                 return (
                   <button
                     key={`day-dot-${item.day}`}
@@ -675,56 +1014,193 @@ export default function JournalPage() {
                   >
                     <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ width: 9, height: 9, borderRadius: "50%", background: mood.color, boxShadow: active ? `0 0 0 3px ${nightMode ? "#2d3440" : "#d6ead7"}` : "none" }} />
-                      <span style={{ fontSize: 12, fontWeight: active ? 800 : 600 }}>{item.day}</span>
+                      <span style={{ fontSize: 12, fontWeight: active ? 800 : 600 }}>{item.day}{isStarred ? " ★" : ""}</span>
                     </span>
                     <span style={{ fontSize: 11, color: theme.muted }}>{item.count}</span>
                   </button>
                 );
               })}
-
-              {!journaledDays.length ? (
-                <p style={{ margin: 0, color: theme.muted, fontSize: 12 }}>Your timeline begins with your first saved entry.</p>
+              {!filteredJournaledDays.length ? (
+                <p style={{ margin: 0, color: theme.muted, fontSize: 12 }}>{searchQuery.trim() ? "No entries match your search." : starFilter ? "No starred entries yet." : "Your timeline begins with your first saved entry."}</p>
               ) : null}
             </div>
           </div>
+
+          {monthlyReflection.totalEntries > 0 && (
+            <div style={{ marginTop: 12, borderTop: `1px solid ${theme.border}`, paddingTop: 10 }}>
+              <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 700, color: theme.muted }}>This Month</p>
+              <p style={{ margin: "0 0 3px", color: theme.text, fontSize: 12 }}>{monthlyReflection.totalEntries} {monthlyReflection.totalEntries === 1 ? "entry" : "entries"}</p>
+              <p style={{ margin: "0 0 3px", color: theme.text, fontSize: 12 }}>~{monthlyReflection.totalWords} words</p>
+              {monthlyReflection.topTags.length > 0 && (
+                <p style={{ margin: 0, color: theme.muted, fontSize: 11 }}>{monthlyReflection.topTags.map((t) => `#${t}`).join(" · ")}</p>
+              )}
+            </div>
+          )}
+
+          <div style={{ marginTop: 10, borderTop: `1px solid ${theme.border}`, paddingTop: 8 }}>
+            <p style={{ margin: "0 0 4px", fontSize: 11, fontWeight: 700, color: theme.muted }}>Mood · Last 7 Days</p>
+            <div style={{ display: "flex", gap: 3 }}>
+              {last7MoodDots.map(({ key, day, mood }) => {
+                const m = MOOD_TONES.find((x) => x.key === mood);
+                return (
+                  <div
+                    key={key}
+                    title={mood ? `Day ${day}: ${mood}` : `Day ${day}: no entry`}
+                    style={{ flex: 1, height: 8, borderRadius: 4, background: m ? m.color : (nightMode ? "#2b3139" : "#e8f0e8"), opacity: m ? 1 : 0.35 }}
+                  />
+                );
+              })}
+            </div>
+          </div>
+
+          {moodTimelinePoints.length >= 2 && (
+            <div style={{ marginTop: 10, borderTop: `1px solid ${theme.border}`, paddingTop: 8 }}>
+              <p style={{ margin: "0 0 4px", fontSize: 11, fontWeight: 700, color: theme.muted }}>Mood Timeline · {monthNames[selectedMonth]}</p>
+              <svg width="100%" height="38" viewBox={`0 0 ${daysInMonth} 10`} preserveAspectRatio="none" style={{ display: "block" }}>
+                <polyline
+                  fill="none"
+                  stroke={nightMode ? "#4ade80" : "#1a6e36"}
+                  strokeWidth="0.7"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  points={moodTimelinePoints
+                    .map(({ day, value }) => `${((day - 1) / Math.max(daysInMonth - 1, 1)) * daysInMonth},${10 - (value / 5) * 8}`)
+                    .join(" ")}
+                />
+                {moodTimelinePoints.map(({ day, value }) => (
+                  <circle
+                    key={day}
+                    cx={((day - 1) / Math.max(daysInMonth - 1, 1)) * daysInMonth}
+                    cy={10 - (value / 5) * 8}
+                    r="0.9"
+                    fill={nightMode ? "#4ade80" : "#1a6e36"}
+                  />
+                ))}
+              </svg>
+            </div>
+          )}
         </aside>
+        )}
 
         <section
           style={{
-            background: theme.panel,
-            border: `1px solid ${theme.border}`,
-            borderRadius: 16,
-            boxShadow: nightMode ? "0 10px 25px #00000066" : "0 4px 14px #94b89422",
-            padding: 16,
+            background: theme.glass,
+            backdropFilter: "blur(18px)",
+            WebkitBackdropFilter: "blur(18px)",
+            border: `1px solid ${theme.glassBorder}`,
+            borderRadius: 20,
+            boxShadow: nightMode ? "0 8px 32px rgba(0,0,0,0.45)" : "0 8px 28px rgba(46,125,50,0.10)",
+            padding: 20,
             transition: "all 0.25s ease",
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
             <p style={{ margin: 0, color: theme.muted, fontWeight: 700, fontSize: 13 }}>{dateKey(selectedDay)}</p>
-            <button
-              onClick={beginNewEntry}
-              style={{ border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, borderRadius: 8, padding: "6px 10px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}
-            >
-              + New Entry
-            </button>
+            <div style={{ display: "flex", gap: 6, position: "relative" }}>
+              <button
+                onClick={() => setTemplatePickerOpen((v) => !v)}
+                style={{ border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, borderRadius: 8, padding: "6px 10px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}
+              >
+                📋 Templates
+              </button>
+              <button
+                onClick={beginNewEntry}
+                style={{ border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, borderRadius: 8, padding: "6px 10px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}
+              >
+                + New Entry
+              </button>
+              {templatePickerOpen && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 6px)",
+                    right: 0,
+                    background: theme.panel,
+                    border: `1px solid ${theme.glassBorder}`,
+                    borderRadius: 14,
+                    boxShadow: nightMode ? "0 8px 28px rgba(0,0,0,0.5)" : "0 8px 24px rgba(46,125,50,0.15)",
+                    backdropFilter: "blur(16px)",
+                    WebkitBackdropFilter: "blur(16px)",
+                    zIndex: 20,
+                    minWidth: 200,
+                    overflow: "hidden",
+                  }}
+                >
+                  {TEMPLATES.map((tpl) => (
+                    <button
+                      key={tpl.label}
+                      onClick={() => {
+                        setDraftEntry((prev) => ({ ...prev, text: tpl.text }));
+                        setTemplatePickerOpen(false);
+                      }}
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        textAlign: "left",
+                        border: "none",
+                        borderBottom: `1px solid ${theme.glassBorder}`,
+                        background: "transparent",
+                        color: theme.text,
+                        padding: "10px 14px",
+                        fontSize: 13,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {tpl.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           <p style={{ margin: "0 0 10px", fontSize: 17, fontWeight: 600, color: theme.text }}>{prompt}</p>
 
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
-            {entriesForSelectedDay.map((entry, idx) => {
-              const active = entry.id === selectedEntryId;
-              return (
-                <button
-                  key={entry.id}
-                  onClick={() => selectExistingEntry(entry.id)}
-                  style={{ border: `1px solid ${theme.border}`, background: active ? (nightMode ? "#2b3139" : "#e7f4e8") : theme.input, color: theme.text, borderRadius: 999, padding: "4px 10px", fontSize: 12, cursor: "pointer", fontWeight: active ? 700 : 600 }}
-                >
-                  Entry {entriesForSelectedDay.length - idx}
-                </button>
-              );
-            })}
-            {!entriesForSelectedDay.length ? <span style={{ fontSize: 12, color: theme.muted }}>No entries saved for this day yet.</span> : null}
-          </div>
+          {/* Entry selector — shows preview text for each saved entry + "New" badge */}
+          {entriesForSelectedDay.length > 0 && (
+            <div style={{ marginBottom: 10 }}>
+              <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: theme.muted, textTransform: "uppercase", letterSpacing: 0.6 }}>Saved entries for this day</p>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {entriesForSelectedDay.map((entry, idx) => {
+                  const active = entry.id === selectedEntryId;
+                  const rawPreview = stripMarkdownPreview((entry.text || "").trim()).slice(0, 38) || "(no text)";
+                  const preview = searchQuery.trim() ? highlightQueryInText(rawPreview, searchQuery) : rawPreview;
+                  const isLong = (entry.text || "").length > 38;
+                  return (
+                    <button
+                      key={entry.id}
+                      onClick={() => selectExistingEntry(entry.id)}
+                      title={entry.text || "(empty)"}
+                      style={{
+                        border: `1.5px solid ${active ? theme.accent : theme.border}`,
+                        background: active ? (nightMode ? "rgba(34,197,94,0.12)" : "rgba(26,110,54,0.08)") : theme.input,
+                        color: active ? theme.accent : theme.text,
+                        borderRadius: 10,
+                        padding: "6px 10px",
+                        fontSize: 12,
+                        cursor: "pointer",
+                        fontWeight: active ? 700 : 500,
+                        maxWidth: 180,
+                        textAlign: "left",
+                        lineHeight: 1.3,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 1,
+                      }}
+                    >
+                      <span style={{ fontSize: 10, fontWeight: 700, opacity: 0.6 }}>#{entriesForSelectedDay.length - idx}{entry.starred ? " ★" : ""}{pinnedEntries.has(entry.id) ? " 📌" : ""}</span>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{preview}{isLong ? "…" : ""}</span>
+                    </button>
+                  );
+                })}
+                {!selectedEntryId && (
+                  <span style={{ alignSelf: "center", fontSize: 11, fontWeight: 700, color: theme.accent, padding: "4px 8px", border: `1.5px solid ${theme.accent}`, borderRadius: 10, background: nightMode ? "rgba(34,197,94,0.08)" : "rgba(26,110,54,0.06)" }}>
+                    ✏️ Writing new
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
             {MOOD_TONES.map((m) => (
@@ -748,6 +1224,14 @@ export default function JournalPage() {
             <button type="button" onClick={() => applyFormatting("bold")} style={toolbarBtn(theme)}>Bold</button>
             <button type="button" onClick={() => applyFormatting("italic")} style={toolbarBtn(theme)}>Italic</button>
             <button type="button" onClick={() => applyFormatting("highlight")} style={toolbarBtn(theme)}>Highlight</button>
+            <button
+              type="button"
+              onClick={starCurrentEntry}
+              title={draftEntry.starred ? "Unstar entry" : "Star entry"}
+              style={{ ...toolbarBtn(theme), color: draftEntry.starred ? (nightMode ? "#f5c842" : "#c8910a") : theme.muted }}
+            >
+              {draftEntry.starred ? "★ Starred" : "☆ Star"}
+            </button>
             <label style={{ ...toolbarBtn(theme), cursor: "pointer" }}>
               Insert Photo
               <input type="file" accept="image/*" onChange={(e) => addEntryPhoto(e.target.files?.[0])} style={{ display: "none" }} />
@@ -765,6 +1249,32 @@ export default function JournalPage() {
                 <option key={t} value={t}>{t}</option>
               ))}
             </select>
+            <input
+              type="text"
+              value={customTagInput}
+              onChange={(e) => setCustomTagInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && customTagInput.trim()) {
+                  insertTag(customTagInput.trim());
+                  setCustomTagInput("");
+                }
+              }}
+              placeholder="Custom tag…"
+              aria-label="Custom tag"
+              style={{ ...toolbarBtn(theme), width: 90, cursor: "text" }}
+            />
+            <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: "auto" }}>
+              <span style={{ fontSize: 11, color: theme.muted }}>Goal</span>
+              <input
+                type="number"
+                min={0}
+                max={2000}
+                value={wordGoal || ""}
+                onChange={(e) => setWordGoal(Math.max(0, parseInt(e.target.value) || 0))}
+                placeholder="words"
+                style={{ width: 54, padding: "4px 6px", borderRadius: 6, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, fontSize: 12 }}
+              />
+            </div>
           </div>
 
           {writeWithHibi ? (
@@ -791,6 +1301,29 @@ export default function JournalPage() {
               boxShadow: nightMode ? "inset 0 1px 2px #00000066" : "inset 0 1px 2px #b9d0ba55",
             }}
           />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "6px 0 0", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, color: theme.muted, flexShrink: 0 }}>
+              {draftEntry.text.trim() ? draftEntry.text.trim().split(/\s+/).length : 0} words · {draftEntry.text.length} chars
+            </span>
+            {unsavedChanges && (
+              <span style={{ fontSize: 12, color: nightMode ? "#f5c842" : "#c8910a", fontWeight: 700, flexShrink: 0 }}>● Unsaved</span>
+            )}
+          </div>
+          {wordGoal > 0 && (() => {
+            const wc = draftEntry.text.trim() ? draftEntry.text.trim().split(/\s+/).length : 0;
+            const pct = Math.min(100, Math.round((wc / wordGoal) * 100));
+            return (
+              <div style={{ marginTop: 6 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                  <span style={{ fontSize: 11, color: theme.muted }}>Word goal</span>
+                  <span style={{ fontSize: 11, color: theme.muted }}>{wc} / {wordGoal}</span>
+                </div>
+                <div style={{ height: 4, borderRadius: 999, background: nightMode ? "#2b3139" : "#dde8dd", overflow: "hidden" }}>
+                  <div style={{ width: `${pct}%`, height: "100%", background: pct >= 100 ? "#2e7d32" : theme.accent, borderRadius: 999, transition: "width 0.3s ease" }} />
+                </div>
+              </div>
+            );
+          })()}
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, gap: 10, flexWrap: "wrap" }}>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -805,20 +1338,57 @@ export default function JournalPage() {
               ))}
             </div>
 
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
               {selectedEntryId ? (
+                deleteConfirm ? (
+                  <>
+                    <span style={{ fontSize: 12, color: nightMode ? "#fca5a5" : "#b91c1c", alignSelf: "center", fontWeight: 600 }}>Delete this entry?</span>
+                    <button
+                      onClick={deleteCurrentEntry}
+                      style={{ border: `1px solid ${nightMode ? "rgba(255,80,80,0.50)" : "rgba(180,40,40,0.35)"}`, background: nightMode ? "rgba(255,80,80,0.15)" : "#fee2e2", color: nightMode ? "#fca5a5" : "#b91c1c", borderRadius: 8, padding: "8px 12px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}
+                    >
+                      Yes, Delete
+                    </button>
+                    <button
+                      onClick={() => setDeleteConfirm(false)}
+                      style={{ border: `1px solid ${theme.border}`, background: "transparent", color: theme.muted, borderRadius: 8, padding: "8px 12px", fontWeight: 600, cursor: "pointer", fontSize: 13 }}
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={deleteCurrentEntry}
+                    style={{ border: `1px solid ${nightMode ? "rgba(255,80,80,0.30)" : "rgba(180,40,40,0.20)"}`, background: nightMode ? "rgba(255,80,80,0.08)" : "#fff0f0", color: nightMode ? "#fca5a5" : "#b91c1c", borderRadius: 8, padding: "8px 12px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}
+                  >
+                    Delete Entry
+                  </button>
+                )
+              ) : (
                 <button
-                  onClick={deleteCurrentEntry}
-                  style={{ border: `1px solid ${theme.border}`, background: nightMode ? "#2a2020" : "#f7eaea", color: nightMode ? "#ffd1d1" : "#8a2a2a", borderRadius: 8, padding: "8px 12px", fontWeight: 700, cursor: "pointer" }}
+                  onClick={() => setDraftEntry(makeEmptyEntry())}
+                  disabled={!draftEntry.text && !draftEntry.photos.length && !draftEntry.tags.length}
+                  style={{ border: `1px solid ${theme.border}`, background: "transparent", color: theme.muted, borderRadius: 8, padding: "8px 12px", fontWeight: 600, cursor: "pointer", fontSize: 13, opacity: (!draftEntry.text && !draftEntry.photos.length && !draftEntry.tags.length) ? 0.4 : 1 }}
                 >
-                  Delete Entry
+                  Clear Draft
                 </button>
-              ) : null}
+              )}
               <button
                 onClick={saveEntry}
-                style={{ border: "none", background: theme.accent, color: "#fff", borderRadius: 8, padding: "8px 12px", fontWeight: 700, cursor: "pointer" }}
+                style={{
+                  border: "none",
+                  background: saveFlash ? (nightMode ? "#16a34a" : "#15803d") : theme.accent,
+                  color: "#fff",
+                  borderRadius: 8,
+                  padding: "8px 12px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  position: "relative",
+                  transition: "background 0.2s ease",
+                }}
               >
-                Save Entry
+                {saveFlash ? "✓ Saved" : "Save Entry"}
+                {unsavedChanges && !saveFlash ? <span style={{ position: "absolute", top: -4, right: -4, width: 8, height: 8, borderRadius: "50%", background: nightMode ? "#f5c842" : "#c8910a" }} /> : null}
               </button>
             </div>
           </div>
@@ -839,16 +1409,16 @@ export default function JournalPage() {
             </div>
           ) : null}
 
-          <div style={{ marginTop: 12, padding: 10, borderRadius: 10, border: `1px solid ${theme.border}`, background: nightMode ? "#1d2229" : "#f0f8f0" }}>
-            <p style={{ margin: 0, color: theme.muted, fontWeight: 700, fontSize: 12 }}>Hibi Note</p>
-            <p style={{ margin: "6px 0 0", color: theme.text }}>
+          <div style={{ marginTop: 12, padding: 10, borderRadius: 10, borderLeft: `3px solid ${nightMode ? "#5a7a5d" : "#81c784"}`, background: nightMode ? "#1d2229" : "#f0f8f0", paddingLeft: 13 }}>
+            <p style={{ margin: 0, color: nightMode ? "#7aad7e" : "#2e7d32", fontWeight: 700, fontSize: 12, letterSpacing: 0.5, textTransform: "uppercase" }}>Hibi Note</p>
+            <p style={{ margin: "6px 0 0", color: theme.text, fontStyle: "italic", fontSize: 14 }}>
               {draftEntry.hibiNote || "Write and save to receive a gentle Hibi reflection."}
             </p>
           </div>
 
-          <div style={{ marginTop: 10, padding: 10, borderRadius: 10, border: `1px solid ${theme.border}`, background: nightMode ? "#1d2229" : "#f7fbf7" }}>
-            <p style={{ margin: 0, color: theme.muted, fontWeight: 700, fontSize: 12 }}>Weekly Journal Summary</p>
-            <p style={{ margin: "6px 0 0", color: theme.text }}>{weeklySummary}</p>
+          <div style={{ marginTop: 10, padding: 10, borderRadius: 10, border: `1px solid ${theme.border}`, background: nightMode ? "#1a1f25" : "#fafcfa" }}>
+            <p style={{ margin: 0, color: theme.muted, fontWeight: 700, fontSize: 12, opacity: 0.7 }}>Weekly Journal Summary</p>
+            <p style={{ margin: "6px 0 0", color: theme.text, fontSize: 13 }}>{weeklySummary}</p>
           </div>
         </section>
       </div>
@@ -856,16 +1426,19 @@ export default function JournalPage() {
       <section
         style={{
           maxWidth: 1140,
-          margin: "12px auto 0",
-          background: theme.panel,
-          border: `1px solid ${theme.border}`,
-          borderRadius: 12,
-          padding: 10,
+          margin: "14px auto 0",
+          background: theme.glass,
+          backdropFilter: "blur(18px)",
+          WebkitBackdropFilter: "blur(18px)",
+          border: `1px solid ${theme.glassBorder}`,
+          borderRadius: 18,
+          padding: 14,
           position: "relative",
           zIndex: 2,
+          boxShadow: nightMode ? "0 4px 20px rgba(0,0,0,0.35)" : "0 4px 16px rgba(46,125,50,0.07)",
         }}
       >
-        <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 700, color: theme.muted }}>Photo Memories</p>
+        <p style={{ margin: "0 0 8px", fontSize: 11, fontWeight: 700, color: theme.muted, textTransform: "uppercase", letterSpacing: 0.8 }}>Photo Memories</p>
         {calendarPhotoTiles.length ? (
           <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
             {calendarPhotoTiles.map((tile) => (
@@ -889,13 +1462,16 @@ export default function JournalPage() {
 
 function toolbarBtn(theme) {
   return {
-    border: `1px solid ${theme.border}`,
-    background: theme.input,
+    border: `1px solid ${theme.glassBorder}`,
+    background: theme.glass,
+    backdropFilter: "blur(8px)",
+    WebkitBackdropFilter: "blur(8px)",
     color: theme.text,
-    borderRadius: 8,
-    padding: "6px 8px",
-    fontSize: 12,
-    fontWeight: 700,
+    borderRadius: 10,
+    padding: "6px 12px",
     cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 600,
+    transition: "all 0.16s ease",
   };
 }

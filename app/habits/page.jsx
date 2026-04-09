@@ -1,35 +1,16 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { getStoredNightModePreference, isNightModeEnabled } from "@/lib/nightModePreference";
+import { useNightMode } from "@/lib/useNightMode";
+import NavBar from "@/app/components/NavBar";
+
+function dedupeHabits(list) {
+  return [...new Map(list.map((h) => [h.toLowerCase(), h])).values()];
+}
 
 export default function HabitTracker() {
-  const defaultHabits = [
-    "AM Skincare",
-    "PM Skincare",
-    "Make Bed",
-    "Water 3L",
-    "Treadmill",
-    "Weights",
-    "French",
-    "Tagalog",
-    "Vietnamese",
-    "Film",
-    "Read",
-    "Journal",
-    "Apply",
-    "Substack",
-    "Caffeine",
-    "Cooking",
-    "Music Making",
-    "Protein",
-    "Vitamin D",
-    "Fish Oil",
-    "Magnesium",
-  ];
   const [habits, setHabits] = useState([]);
   const [newHabit, setNewHabit] = useState("");
   const [checked, setChecked] = useState({});
@@ -53,12 +34,20 @@ export default function HabitTracker() {
   const [softFocusHabit, setSoftFocusHabit] = useState("");
   const [softFocusTransition, setSoftFocusTransition] = useState(false);
   const [softFocusCardKey, setSoftFocusCardKey] = useState(0);
-  const [nightMode, setNightMode] = useState(false);
+  const [archivedHabits, setArchivedHabits] = useState([]);
+  const [lastRemovedHabit, setLastRemovedHabit] = useState(null);
+  const [notePopover, setNotePopover] = useState({ habit: null, day: null, text: "" });
+  const [habitColors, setHabitColors] = useState({});
+  const [colorPickerOpenFor, setColorPickerOpenFor] = useState(null);
+  const [colorPickerPos, setColorPickerPos] = useState({ x: 0, y: 0 });
+  const [vacationDays, setVacationDays] = useState(new Set());
+  const [habitStatsPopover, setHabitStatsPopover] = useState(null);
   const cellClickTimersRef = useRef({});
   const router = useRouter();
+  const nightMode = useNightMode();
 
   const now = new Date();
-  const minYear = 2026;
+  const minYear = Math.max(now.getFullYear() - 1, 2025);
   const minMonth = 0; // January
   const [viewYear, setViewYear] = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth()); // 0-based
@@ -169,6 +158,49 @@ export default function HabitTracker() {
     }
   }
 
+  function readLocalHabitColors(activeUserId) {
+    try {
+      const raw = localStorage.getItem(`habit_colors_${activeUserId || "guest"}`);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function writeLocalHabitColors(map, activeUserId) {
+    try {
+      localStorage.setItem(`habit_colors_${activeUserId || "guest"}`, JSON.stringify(map));
+    } catch {
+      // Ignore localStorage failures.
+    }
+  }
+
+  function setHabitColor(habit, color) {
+    const next = { ...habitColors, [habit]: color };
+    if (!color) delete next[habit];
+    setHabitColors(next);
+    writeLocalHabitColors(next, userId);
+  }
+
+  function readLocalArchivedHabits(activeUserId) {
+    try {
+      const raw = localStorage.getItem(`habit_archived_${activeUserId || "guest"}`);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function writeLocalArchivedHabits(list, activeUserId) {
+    try {
+      localStorage.setItem(`habit_archived_${activeUserId || "guest"}`, JSON.stringify(list));
+    } catch {
+      // Ignore localStorage failures.
+    }
+  }
+
   function formatDate(day) {
     return `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   }
@@ -186,6 +218,12 @@ export default function HabitTracker() {
     });
   }
 
+  function goToToday() {
+    const now = new Date();
+    setViewYear(now.getFullYear());
+    setViewMonth(now.getMonth());
+  }
+
   function goNextMonth() {
     setViewMonth((m) => {
       if (m === 11) {
@@ -196,34 +234,77 @@ export default function HabitTracker() {
     });
   }
 
+  const statusTimerRef = useRef(null);
+  function showStatus(msg) {
+    setStatus(msg);
+    if (statusTimerRef.current) clearTimeout(statusTimerRef.current);
+    statusTimerRef.current = setTimeout(() => setStatus(""), 2000);
+  }
+
+  // F key toggles soft focus mode (when not typing in an input/textarea)
   useEffect(() => {
-    const syncNightMode = () => {
-      const preference = getStoredNightModePreference();
-      setNightMode(isNightModeEnabled(preference));
-    };
-
-    syncNightMode();
-
-    const intervalId = window.setInterval(syncNightMode, 60 * 1000);
-    const handleStorage = (event) => {
-      if (!event.key || event.key === "hibi_night_mode_preference") {
-        syncNightMode();
+    function handleKey(e) {
+      if (e.key === "f" || e.key === "F") {
+        const tag = document.activeElement?.tagName?.toLowerCase();
+        if (tag === "input" || tag === "textarea") return;
+        setSoftFocusMode((v) => !v);
       }
-    };
-    window.addEventListener("storage", handleStorage);
-
-    return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener("storage", handleStorage);
-    };
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
   }, []);
+
+  // Close color picker on outside click
+  useEffect(() => {
+    if (!colorPickerOpenFor) return;
+    function handleOutside(e) {
+      if (!e.target.closest("[data-color-picker]")) {
+        setColorPickerOpenFor(null);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [colorPickerOpenFor]);
+
+  // Load vacation days from localStorage
+  useEffect(() => {
+    if (!userId) return;
+    try {
+      const raw = localStorage.getItem(`hibi_vacation_${userId}`);
+      const parsed = raw ? JSON.parse(raw) : [];
+      setVacationDays(new Set(Array.isArray(parsed) ? parsed : []));
+    } catch {
+      setVacationDays(new Set());
+    }
+  }, [userId]);
+
+  function toggleVacationToday() {
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    setVacationDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(todayKey)) {
+        next.delete(todayKey);
+      } else {
+        next.add(todayKey);
+      }
+      try {
+        localStorage.setItem(`hibi_vacation_${userId}`, JSON.stringify([...next]));
+      } catch {}
+      return next;
+    });
+  }
+
+  function isTodayVacation() {
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    return vacationDays.has(todayKey);
+  }
 
   useEffect(() => {
     let unsubscribe = null;
 
     async function loadUser() {
       if (!supabase) {
-        setStatus("Supabase is not configured. Using local saved data.");
+        showStatus("Supabase is not configured. Using local saved data.");
         setAuthReady(true);
         return;
       }
@@ -259,9 +340,14 @@ export default function HabitTracker() {
 
       // Only show default habits for first-time users (no local or remote habits)
       if (localList.length > 0) {
-        setHabits(localList);
+        const deduped = dedupeHabits(localList);
+        setHabits(deduped);
+        // Persist deduplicated list so it doesn't reload with duplicates
+        if (deduped.length !== localList.length) {
+          writeLocalHabitList(deduped, userId);
+        }
       } else if (!supabase || !userId) {
-        // If no Supabase or user, and no local habits, start empty (do not restore defaults after deletion)
+        // If no Supabase or user, and no local habits, start empty
         setHabits([]);
         writeLocalHabitList([], userId);
         return;
@@ -283,18 +369,19 @@ export default function HabitTracker() {
         return;
       }
 
-      const remoteList = (data || []).map((row) => row.habit_name).filter(Boolean);
+      const remoteList = dedupeHabits((data || []).map((row) => row.habit_name).filter(Boolean));
       if (remoteList.length > 0) {
         setHabits(remoteList);
         writeLocalHabitList(remoteList, userId);
       } else if (localList.length === 0) {
-        // If no remote or local habits, start empty (do not restore defaults after deletion)
         setHabits([]);
         writeLocalHabitList([], userId);
       }
     }
 
     loadHabitList();
+    setArchivedHabits(readLocalArchivedHabits(userId));
+    setHabitColors(readLocalHabitColors(userId));
   }, [userId]);
 
   useEffect(() => {
@@ -317,7 +404,7 @@ export default function HabitTracker() {
       setChecked(hydratedLocalMap);
 
       if (!supabase) {
-        setStatus("Supabase is not configured. Using local saved data.");
+        showStatus("Supabase is not configured. Using local saved data.");
         return;
       }
 
@@ -345,7 +432,7 @@ export default function HabitTracker() {
       });
       setChecked(map);
       writeLocalMonthChecks(map, userId);
-      setStatus("Connected to Supabase.");
+      showStatus("Connected to Supabase.");
     }
     loadChecks();
   }, [viewMonth, viewYear, userId]);
@@ -410,7 +497,7 @@ export default function HabitTracker() {
       setTimeout(() => setCompletionCheckKey((current) => (current === key ? null : current)), 620);
     }
 
-    setStatus("Updated.");
+    showStatus("Updated.");
 
     if (!supabase || !userId) {
       return;
@@ -427,7 +514,7 @@ export default function HabitTracker() {
         .eq("date", date);
 
       if (error) {
-        setStatus("Updated.");
+        showStatus("Updated.");
       }
       return;
     }
@@ -445,7 +532,7 @@ export default function HabitTracker() {
       );
 
     if (error) {
-      setStatus("Updated.");
+      showStatus("Updated.");
     }
   }
 
@@ -464,7 +551,7 @@ export default function HabitTracker() {
     const habitName = newHabit.trim();
     if (!habitName) return;
     if (habits.some((h) => h.toLowerCase() === habitName.toLowerCase())) {
-      setStatus("Habit already exists.");
+      showStatus("Habit already exists.");
       return;
     }
 
@@ -472,7 +559,7 @@ export default function HabitTracker() {
     setHabits(updated);
     writeLocalHabitList(updated, userId);
     setNewHabit("");
-    setStatus("Updated.");
+    showStatus("Updated.");
 
     if (!supabase || !userId) return;
 
@@ -488,15 +575,54 @@ export default function HabitTracker() {
       );
 
     if (error) {
-      setStatus("Updated.");
+      showStatus("Updated.");
+    }
+  }
+
+  function archiveHabit(habitName) {
+    const updatedHabits = habits.filter((h) => h !== habitName);
+    const updatedArchived = [...archivedHabits, habitName];
+    setHabits(updatedHabits);
+    setArchivedHabits(updatedArchived);
+    writeLocalHabitList(updatedHabits, userId);
+    writeLocalArchivedHabits(updatedArchived, userId);
+    showStatus("Archived.");
+  }
+
+  function unarchiveHabit(habitName) {
+    const updatedHabits = [...habits, habitName];
+    const updatedArchived = archivedHabits.filter((h) => h !== habitName);
+    setHabits(updatedHabits);
+    setArchivedHabits(updatedArchived);
+    writeLocalHabitList(updatedHabits, userId);
+    writeLocalArchivedHabits(updatedArchived, userId);
+    showStatus("Restored.");
+  }
+
+  function undoRemoveHabit() {
+    if (!lastRemovedHabit) return;
+    const { name, index } = lastRemovedHabit;
+    const updated = [...habits];
+    updated.splice(Math.min(index, updated.length), 0, name);
+    setHabits(updated);
+    writeLocalHabitList(updated, userId);
+    setLastRemovedHabit(null);
+    showStatus("Habit restored.");
+    if (supabase && userId) {
+      supabase.from("user_habits").upsert(
+        { user_id: userId, habit_name: name, sort_order: index },
+        { onConflict: "user_id,habit_name" }
+      );
     }
   }
 
   async function removeHabit(habitName) {
+    const removedIndex = habits.indexOf(habitName);
+    setLastRemovedHabit({ name: habitName, index: removedIndex });
     const updated = habits.filter((h) => h !== habitName);
     setHabits(updated);
     writeLocalHabitList(updated, userId);
-    setStatus("Updated.");
+    showStatus("Updated.");
 
     setHabitNotes((prev) => {
       const next = {};
@@ -529,7 +655,7 @@ export default function HabitTracker() {
       .eq("habit_name", habitName);
 
     if (habitError) {
-      setStatus("Updated.");
+      showStatus("Updated.");
     }
 
     await supabase
@@ -542,7 +668,7 @@ export default function HabitTracker() {
   async function renameHabit(oldHabitName) {
     const nextHabitName = editingHabitValue.trim();
     if (!nextHabitName) {
-      setStatus("Habit name cannot be empty.");
+      showStatus("Habit name cannot be empty.");
       return;
     }
 
@@ -550,7 +676,7 @@ export default function HabitTracker() {
       nextHabitName.toLowerCase() !== oldHabitName.toLowerCase() &&
       habits.some((h) => h.toLowerCase() === nextHabitName.toLowerCase())
     ) {
-      setStatus("Habit already exists.");
+      showStatus("Habit already exists.");
       return;
     }
 
@@ -594,7 +720,7 @@ export default function HabitTracker() {
 
     setEditingHabit(null);
     setEditingHabitValue("");
-    setStatus("Updated.");
+    showStatus("Updated.");
 
     if (!supabase || !userId) return;
 
@@ -605,7 +731,7 @@ export default function HabitTracker() {
       .eq("habit_name", oldHabitName);
 
     if (habitsError) {
-      setStatus("Updated.");
+      showStatus("Updated.");
     }
 
     const { error: checksError } = await supabase
@@ -615,14 +741,14 @@ export default function HabitTracker() {
       .eq("habit", oldHabitName);
 
     if (checksError) {
-      setStatus("Updated.");
+      showStatus("Updated.");
     }
   }
 
   function saveHabitNote(habit, day, text) {
     if (day > daysInMonth) return;
     const key = `${habit}-${day}`;
-    const cleaned = String(text || "").trim().slice(0, 48);
+    const cleaned = String(text || "").trim().slice(0, 200);
     setHabitNotes((prev) => {
       const next = { ...prev };
       if (cleaned) {
@@ -633,16 +759,14 @@ export default function HabitTracker() {
       writeLocalHabitNotes(next, userId);
       return next;
     });
-    setStatus("Updated.");
+    showStatus("Updated.");
   }
 
   function openHabitNoteEditor(habit, day) {
     if (day > daysInMonth) return;
     const key = `${habit}-${day}`;
     const existing = habitNotes[key] || "";
-    const next = window.prompt("Add a tiny note for this habit (optional)", existing);
-    if (next === null) return;
-    saveHabitNote(habit, day, next);
+    setNotePopover({ habit, day, text: existing });
   }
 
   function handleHabitCellClick(habit, day, event) {
@@ -682,16 +806,15 @@ export default function HabitTracker() {
       reordered.splice(result.destination.index, 0, removed);
       setHabits(reordered);
       writeLocalHabitList(reordered, userId);
-      setStatus("Updated.");
-      // Update sort_order in Supabase
+      showStatus("Updated.");
+      // Update sort_order in Supabase (batched single upsert)
       if (supabase && userId) {
-        for (let i = 0; i < reordered.length; i++) {
-          await supabase
-            .from("user_habits")
-            .update({ sort_order: i })
-            .eq("user_id", userId)
-            .eq("habit_name", reordered[i]);
-        }
+        await supabase
+          .from("user_habits")
+          .upsert(
+            reordered.map((name, i) => ({ user_id: userId, habit_name: name, sort_order: i })),
+            { onConflict: "user_id,habit_name" }
+          );
       }
     };
   // Month label
@@ -757,6 +880,29 @@ export default function HabitTracker() {
     }
   }, [habits, checked, ringDay]);
 
+  function computeHabitStreak(habit) {
+    let currentStreak = 0;
+    let bestStreak = 0;
+    let running = 0;
+    for (let day = 1; day <= analysisDays; day++) {
+      const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      const onVacation = vacationDays.has(dateStr);
+      if (checked[`${habit}-${day}`] === "dot" || onVacation) {
+        running++;
+        if (running > bestStreak) bestStreak = running;
+      } else {
+        running = 0;
+      }
+    }
+    for (let day = analysisDays; day >= 1; day--) {
+      const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      const onVacation = vacationDays.has(dateStr);
+      if (checked[`${habit}-${day}`] === "dot" || onVacation) currentStreak++;
+      else break;
+    }
+    return { currentStreak, bestStreak };
+  }
+
   const habitStats = habits.map((habit) => {
     let done = 0;
     let missed = 0;
@@ -772,6 +918,12 @@ export default function HabitTracker() {
   const lowestHabits = [...habitStats]
     .sort((a, b) => a.rate - b.rate)
     .slice(0, 3);
+
+  const habitsWithStreaks = habits.map((habit) => ({
+    habit,
+    ...computeHabitStreak(habit),
+    rate: (habitStats.find((s) => s.habit === habit) || { rate: 0 }).rate,
+  }));
 
   const monthlyDone = habitStats.reduce((sum, h) => sum + h.done, 0);
   const monthlyMissed = habitStats.reduce((sum, h) => sum + h.missed, 0);
@@ -922,34 +1074,47 @@ export default function HabitTracker() {
     restartCount >= 2 ? "Resilient" : lateAvg > earlyAvg ? "Growing" : "Becoming",
   ];
 
+  const allHabitsDoneToday = habits.length > 0 && habits.every(
+    (h) => checked[`${h}-${ringDay}`] === "dot"
+  );
+
   const moodGradient =
     "linear-gradient(135deg, #F4C7A1 0%, #E8DCC2 25%, #C8D8C0 50%, #BFCAD8 75%, #8A94A6 100%)";
   const moodScale = 0.86 + Math.min(0.25, overallRate / 400);
   const habitTheme = {
-    panel: nightMode ? "#171a1f" : "#f6fcf4",
-    panelAlt: nightMode ? "#1b2026" : "#e8f5e9",
-    border: nightMode ? "#2b3139" : "#c5dec6",
-    heading: nightMode ? "#e9ecef" : "#14532d",
-    body: nightMode ? "#c9d1da" : "#1b5e20",
-    muted: nightMode ? "#9aa3af" : "#2e7d32",
-    inputBg: nightMode ? "#111418" : "#fff",
-    inputBorder: nightMode ? "#353c46" : "#9ccc9e",
+    panel: nightMode ? "rgba(12,16,22,0.82)" : "rgba(255,255,255,0.82)",
+    panelAlt: nightMode ? "rgba(15,20,26,0.85)" : "rgba(240,250,240,0.90)",
+    border: nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)",
+    heading: nightMode ? "#dde3ea" : "#0d2a14",
+    body: nightMode ? "#b0bac8" : "#1a4a22",
+    muted: nightMode ? "#6a8a70" : "#4a7a50",
+    inputBg: nightMode ? "rgba(7,10,15,0.9)" : "rgba(255,255,255,0.95)",
+    inputBorder: nightMode ? "rgba(255,255,255,0.12)" : "rgba(46,125,50,0.25)",
+    glass: nightMode ? "rgba(12,16,22,0.82)" : "rgba(255,255,255,0.82)",
+    glassBorder: nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)",
+    accent: nightMode ? "#22c55e" : "#1a6e36",
   };
 
   if (!authReady) {
     return (
       <main
         style={{
-          padding: 24,
+          padding: "28px 24px",
           minHeight: "100vh",
           background: nightMode
-            ? "linear-gradient(165deg, #0f1113 0%, #15181c 50%, #1c2025 100%)"
-            : "linear-gradient(150deg, #fdf6ec 0%, #e8f5e9 55%, #c8e6c9 100%)",
-          fontFamily: "system-ui, sans-serif",
+            ? "linear-gradient(145deg, #070b0d 0%, #0c1117 35%, #101820 70%, #0e1a14 100%)"
+            : "linear-gradient(145deg, #f7fbf4 0%, #eef7e8 40%, #e0f0da 75%, #d4ead4 100%)",
+          fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif",
           color: nightMode ? "#e9ecef" : "#14532d",
         }}
       >
-        Loading your tracker...
+        <div style={{ maxWidth: 820, margin: "0 auto", display: "grid", gap: 14, paddingTop: 60 }}>
+          <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 48, borderRadius: 999 }} />
+          <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 32, borderRadius: 12, maxWidth: 240 }} />
+          <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 120, borderRadius: 16 }} />
+          <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 90, borderRadius: 16 }} />
+          <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 90, borderRadius: 16 }} />
+        </div>
       </main>
     );
   }
@@ -957,125 +1122,47 @@ export default function HabitTracker() {
   return (
     <main
       style={{
-        padding: 24,
+        padding: "28px 24px",
         minHeight: "100vh",
         background: nightMode
-          ? "linear-gradient(165deg, #0f1113 0%, #15181c 50%, #1c2025 100%)"
-          : "linear-gradient(150deg, #fdf6ec 0%, #e8f5e9 55%, #c8e6c9 100%)",
-        fontFamily: 'system-ui, sans-serif',
+          ? "linear-gradient(145deg, #070b0d 0%, #0c1117 35%, #101820 70%, #0e1a14 100%)"
+          : "linear-gradient(145deg, #f7fbf4 0%, #eef7e8 40%, #e0f0da 75%, #d4ead4 100%)",
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif",
         position: 'relative',
-        overflow: 'hidden',
+        animation: "hibiFadeIn 0.35s ease",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 10,
-          marginBottom: 18,
-          position: "relative",
-        }}
-      >
-        <Link href="/" style={{
-          position: "absolute",
-          left: 0,
-          top: "50%",
-          transform: "translateY(-50%)",
-          textDecoration: "none",
-          fontWeight: 900,
-          fontSize: 28,
-          color: nightMode ? "#e9ecef" : "#14532d",
-          letterSpacing: 1.5,
-          paddingLeft: 12,
-          fontFamily: 'system-ui, sans-serif',
-          userSelect: "none",
-        }}>
-          Hibi
-        </Link>
-        <Link
-          href="/calendar"
+      <NavBar activePage="habits" />
+      {/* Streak protection nudge — after 9PM with incomplete habits */}
+      {now.getHours() >= 21 && ringDoneCount < habits.length && habits.length > 0 && (
+        <div
           style={{
-            textDecoration: "none",
-            background: nightMode ? "#1c2127" : "#e8f5e9",
-            color: nightMode ? "#e9ecef" : "#14532d",
+            maxWidth: 820,
+            margin: "0 auto 12px",
+            background: nightMode ? "rgba(251,146,60,0.12)" : "rgba(251,146,60,0.10)",
+            border: `1px solid ${nightMode ? "rgba(251,146,60,0.35)" : "rgba(194,98,10,0.28)"}`,
+            borderRadius: 14,
             padding: "10px 16px",
-            borderRadius: 10,
-            fontWeight: 700,
-            border: `1.5px solid ${nightMode ? "#2b3139" : "#2e7d32"}`,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
           }}
         >
-          Calendar
-        </Link>
-        <Link
-          href="/habits"
-          style={{
-            textDecoration: "none",
-            background: nightMode ? "#2b3139" : "#2e7d32",
-            color: "#fff",
-            padding: "10px 16px",
-            borderRadius: 10,
-            fontWeight: 700,
-            boxShadow: nightMode ? "0 2px 8px #00000088" : "0 2px 8px #2e7d3240",
-          }}
-        >
-          Habit Tracker
-        </Link>
-        <Link
-          href="/journal"
-          style={{
-            textDecoration: "none",
-            background: nightMode ? "#1c2127" : "#e8f5e9",
-            color: nightMode ? "#e9ecef" : "#14532d",
-            padding: "10px 16px",
-            borderRadius: 10,
-            fontWeight: 700,
-            border: `1.5px solid ${nightMode ? "#2b3139" : "#2e7d32"}`,
-          }}
-        >
-          Journal
-        </Link>
-        <Link
-          href="/profile"
-          style={{
-            textDecoration: "none",
-            background: nightMode ? "#1c2127" : "#e8f5e9",
-            color: nightMode ? "#e9ecef" : "#14532d",
-            padding: "10px 16px",
-            borderRadius: 10,
-            fontWeight: 700,
-            border: `1.5px solid ${nightMode ? "#2b3139" : "#2e7d32"}`,
-          }}
-        >
-          Profile
-        </Link>
-        <button
-          onClick={async () => {
-            if (typeof window !== "undefined") {
-              await supabase.auth.signOut();
-              router.replace("/login");
-            }
-          }}
-          style={{
-            textDecoration: "none",
-            background: nightMode ? "#1c2127" : "#e8f5e9",
-            color: nightMode ? "#e9ecef" : "#14532d",
-            padding: "10px 16px",
-            borderRadius: 10,
-            fontWeight: 700,
-            border: `1.5px solid ${nightMode ? "#2b3139" : "#2e7d32"}`,
-            cursor: "pointer",
-          }}
-        >
-          Log Out
-        </button>
-      </div>
+          <span style={{ fontSize: 18 }}>🌙</span>
+          <span style={{ color: nightMode ? "#fdba74" : "#c2620a", fontWeight: 700, fontSize: 13 }}>
+            Evening reminder:
+          </span>
+          <span style={{ color: nightMode ? "#fcd34d" : "#92400e", fontSize: 13, flex: 1 }}>
+            {habits.length - ringDoneCount} habit{habits.length - ringDoneCount === 1 ? "" : "s"} left to complete today.
+          </span>
+        </div>
+      )}
       <h1
         style={{
           color: habitTheme.heading,
           fontWeight: 800,
-          fontSize: 36,
-          letterSpacing: 1,
+          fontSize: "clamp(26px, 5vw, 38px)",
+          letterSpacing: -0.5,
           marginBottom: 4,
         }}
       >
@@ -1090,11 +1177,13 @@ export default function HabitTracker() {
           fontWeight: 600,
           fontSize: 22,
           marginBottom: 8,
+          flexWrap: "wrap",
         }}
       >
         <button
           onClick={goPrevMonth}
           disabled={isAtMinMonth}
+          aria-label="Previous month"
           style={{
             border: "none",
             background: isAtMinMonth ? (nightMode ? "#2a2f36" : "#cfd8dc") : (nightMode ? "#2b3139" : "#2e7d32"),
@@ -1106,13 +1195,13 @@ export default function HabitTracker() {
             fontSize: 16,
             fontWeight: 700,
           }}
-          aria-label="Previous month"
         >
           ←
         </button>
         <span>{monthLabel}</span>
         <div
           title={`Day ${ringDay}: ${ringDoneCount}/${habits.length || 0} completed`}
+          aria-label={`Progress ring: ${ringDoneCount} of ${habits.length} habits done on day ${ringDay}`}
           style={{
             width: 36,
             height: 36,
@@ -1121,7 +1210,7 @@ export default function HabitTracker() {
             placeItems: "center",
           }}
         >
-          <svg width="36" height="36" viewBox="0 0 36 36" style={{ position: "absolute", inset: 0 }}>
+          <svg width="36" height="36" viewBox="0 0 36 36" style={{ position: "absolute", inset: 0 }} aria-hidden="true">
             <circle cx="18" cy="18" r={ringRadius} fill="none" stroke={nightMode ? "#39424d" : "#c7d6c7"} strokeWidth="2" />
             <circle
               cx="18"
@@ -1137,10 +1226,11 @@ export default function HabitTracker() {
               style={{ transition: "stroke-dashoffset 0.35s ease" }}
             />
           </svg>
-          <span style={{ color: habitTheme.muted, fontSize: 12, fontWeight: 700 }}>{ringDay}</span>
+          <span style={{ color: habitTheme.muted, fontSize: 12, fontWeight: 700 }} aria-hidden="true">{ringDay}</span>
         </div>
         <button
           onClick={goNextMonth}
+          aria-label="Next month"
           style={{
             border: "none",
             background: nightMode ? "#2b3139" : "#2e7d32",
@@ -1152,12 +1242,74 @@ export default function HabitTracker() {
             fontSize: 16,
             fontWeight: 700,
           }}
-          aria-label="Next month"
         >
           →
         </button>
+        {(viewYear !== new Date().getFullYear() || viewMonth !== new Date().getMonth()) && (
+          <button
+            onClick={goToToday}
+            aria-label="Jump to current month"
+            title="Jump to today"
+            style={{
+              border: `1px solid ${nightMode ? "rgba(74,222,128,0.3)" : "rgba(26,110,54,0.3)"}`,
+              background: "transparent",
+              color: nightMode ? "#4ade80" : "#1a6e36",
+              borderRadius: 999,
+              padding: "4px 10px",
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: 700,
+            }}
+          >
+            Today
+          </button>
+        )}
+        {/* Vacation toggle — pauses streak counting for today */}
+        <button
+          type="button"
+          onClick={toggleVacationToday}
+          aria-pressed={isTodayVacation()}
+          title={isTodayVacation() ? "Click to remove — today will count toward streaks again" : "Mark today as a rest/vacation day so missing habits won't break your streak"}
+          style={{
+            marginLeft: "auto",
+            border: `1.5px solid ${isTodayVacation() ? (nightMode ? "rgba(251,146,60,0.5)" : "rgba(194,98,10,0.4)") : habitTheme.inputBorder}`,
+            background: isTodayVacation() ? (nightMode ? "rgba(251,146,60,0.12)" : "rgba(251,146,60,0.08)") : "transparent",
+            color: isTodayVacation() ? (nightMode ? "#fdba74" : "#c2620a") : habitTheme.muted,
+            borderRadius: 999,
+            padding: "4px 10px",
+            fontWeight: 700,
+            cursor: "pointer",
+            fontSize: 12,
+          }}
+        >
+          {isTodayVacation() ? "🌴 Rest day ON — tap to remove" : "🌴 Rest Day"}
+        </button>
       </div>
-      <p style={{ color: habitTheme.heading, fontWeight: 500, marginBottom: 12 }}>{status}</p>
+      {isTodayVacation() && (
+        <p style={{ margin: "6px 0 0", fontSize: 12, color: nightMode ? "#fdba74" : "#c2620a", fontStyle: "italic" }}>
+          Rest day is on — missed habits today won't break your streak.
+        </p>
+      )}
+      <p style={{
+        color: status
+          ? /cannot|already|error|failed|not configured/i.test(status)
+            ? (nightMode ? "#fca5a5" : "#b91c1c")
+            : /connected|updated|archived|restored|saved/i.test(status)
+              ? (nightMode ? "#4ade80" : "#15803d")
+              : (nightMode ? "#fbbf24" : "#b45309")
+          : habitTheme.heading,
+        fontWeight: 600,
+        marginBottom: 12,
+        minHeight: 20,
+        fontSize: 13,
+      }}>{status}</p>
+      {lastRemovedHabit && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: nightMode ? "#1b2026" : "#e8f5e9", border: `1px solid ${nightMode ? "#2b3139" : "#a5d6a7"}`, borderRadius: 8, padding: "7px 12px", marginBottom: 10, maxWidth: 520 }}>
+          <span style={{ color: nightMode ? "#e9ecef" : "#14532d", fontSize: 13 }}>&#8220;{lastRemovedHabit.name}&#8221; removed.</span>
+          <button onClick={undoRemoveHabit} style={{ border: "none", background: nightMode ? "#2b3139" : "#2e7d32", color: "#fff", borderRadius: 6, padding: "4px 10px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Undo</button>
+          <button onClick={() => setLastRemovedHabit(null)} style={{ border: "none", background: "transparent", color: nightMode ? "#9aa3af" : "#888", cursor: "pointer", fontWeight: 700, fontSize: 16, lineHeight: 1 }}>×</button>
+        </div>
+      )}
       <p style={{ color: habitTheme.muted, fontWeight: 500, marginBottom: 8 }}>
         Tap a cell to cycle: empty → dot (done) → filled square (did not do).
       </p>
@@ -1191,7 +1343,7 @@ export default function HabitTracker() {
               fontSize: 13,
             }}
           >
-            Enter Soft Focus
+            Enter Soft Focus <span style={{ fontSize: 11, opacity: 0.6, fontWeight: 500 }}>[F]</span>
           </button>
         ) : (
           <button
@@ -1237,7 +1389,7 @@ export default function HabitTracker() {
             {getSoftFocusWhisper()}
           </p>
 
-          {softFocusHabit ? (
+          {softFocusHabit && !allHabitsDoneToday ? (
             <div
               key={`${softFocusHabit}-${softFocusCardKey}`}
               className={`soft-focus-card ${softFocusTransition ? "soft-focus-exit" : ""}`}
@@ -1296,6 +1448,23 @@ export default function HabitTracker() {
               >
                 Skip Today
               </button>
+            </div>
+          ) : allHabitsDoneToday ? (
+            <div
+              style={{
+                borderRadius: 16,
+                border: `1px solid ${nightMode ? "rgba(34,197,94,0.35)" : "rgba(26,110,54,0.3)"}`,
+                background: nightMode ? "rgba(34,197,94,0.10)" : "rgba(26,110,54,0.06)",
+                padding: "24px 18px",
+                display: "grid",
+                gap: 10,
+                justifyItems: "center",
+                textAlign: "center",
+              }}
+            >
+              <span style={{ fontSize: 36 }}>🌿</span>
+              <p style={{ margin: 0, color: nightMode ? "#4ade80" : "#1a6e36", fontWeight: 800, fontSize: 20 }}>All done for today!</p>
+              <p style={{ margin: 0, color: habitTheme.body, fontSize: 14, lineHeight: 1.45 }}>You completed every habit. That is something worth sitting with.</p>
             </div>
           ) : (
             <p style={{ margin: 0, color: habitTheme.muted, textAlign: "center" }}>Add a habit to begin Soft Focus.</p>
@@ -1411,27 +1580,36 @@ export default function HabitTracker() {
                           left: 0,
                           zIndex: 2,
                         }}>Habit</th>
-                        {days.map(day => (
-                          <th
-                            key={day}
-                            style={{
-                              background: nightMode ? "#242b33" : "#a5d6a7",
-                              color: habitTheme.heading,
-                              fontWeight: 700,
-                              fontSize: 15,
-                              padding: "8px 0",
-                              borderBottom: "2px solid #388e3c",
-                              borderTopRightRadius: day === 31 ? 12 : 0,
-                            }}
-                          >
-                            {day}
-                          </th>
-                        ))}
+                        {days.map(day => {
+                          const dow = day <= daysInMonth ? new Date(viewYear, viewMonth, day).getDay() : -1;
+                          const DOW_LABELS = ["S","M","T","W","T","F","S"];
+                          const isWeekend = dow === 0 || dow === 6;
+                          return (
+                            <th
+                              key={day}
+                              style={{
+                                background: nightMode ? "#242b33" : "#a5d6a7",
+                                color: habitTheme.heading,
+                                fontWeight: 700,
+                                fontSize: 13,
+                                padding: "4px 0",
+                                borderBottom: "2px solid #388e3c",
+                                borderTopRightRadius: day === 31 ? 12 : 0,
+                                borderLeft: day % 7 === 1 && day !== 1 ? `2px solid ${nightMode ? "#39424d" : "#81c784"}` : undefined,
+                                textAlign: "center",
+                                minWidth: 32,
+                              }}
+                            >
+                              <span style={{ display: "block", lineHeight: 1.3 }}>{day}</span>
+                              {dow >= 0 && <span style={{ display: "block", fontSize: 9, fontWeight: 500, opacity: 0.6, color: isWeekend ? (nightMode ? "#f5a623" : "#795548") : "inherit" }}>{DOW_LABELS[dow]}</span>}
+                            </th>
+                          );
+                        })}
                       </tr>
                     </thead>
                     <tbody>
                       {habits.map((habit, habitIdx) => (
-                        <Draggable key={habit} draggableId={habit} index={habitIdx}>
+                        <Draggable key={`${habit}-${habitIdx}`} draggableId={`${habit}-${habitIdx}`} index={habitIdx}>
                           {(provided, snapshot) => (
                             <tr
                               ref={provided.innerRef}
@@ -1447,6 +1625,7 @@ export default function HabitTracker() {
                                 fontWeight: 700,
                                 padding: "8px 12px",
                                 borderRight: `2px solid ${nightMode ? "#39424d" : "#388e3c"}`,
+                                borderLeft: habitColors[habit] ? `4px solid ${habitColors[habit]}` : undefined,
                                 borderTopLeftRadius: 0,
                                 borderBottomLeftRadius: 0,
                                 position: "sticky",
@@ -1510,7 +1689,66 @@ export default function HabitTracker() {
                                       </button>
                                     )}
                                   </span>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6, position: "relative" }}>
+                                    {editingHabit !== habit && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setHabitStatsPopover(habit)}
+                                        title={`View stats for ${habit}`}
+                                        aria-label={`View stats for ${habit}`}
+                                        style={{ border: "none", background: "transparent", color: habitTheme.muted, cursor: "pointer", fontSize: 12, lineHeight: 1, padding: "0 2px" }}
+                                      >
+                                        📊
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      title="Habit color"
+                                      data-color-picker="true"
+                                      onClick={(e) => {
+                                        if (colorPickerOpenFor === habit) {
+                                          setColorPickerOpenFor(null);
+                                        } else {
+                                          const rect = e.currentTarget.getBoundingClientRect();
+                                          setColorPickerPos({ x: rect.left, y: rect.bottom + 6 });
+                                          setColorPickerOpenFor(habit);
+                                        }
+                                      }}
+                                      style={{
+                                        border: "none",
+                                        background: habitColors[habit] || "transparent",
+                                        color: habitColors[habit] ? "#fff" : habitTheme.muted,
+                                        width: 14,
+                                        height: 14,
+                                        borderRadius: "50%",
+                                        cursor: "pointer",
+                                        boxShadow: `0 0 0 1.5px ${nightMode ? "#5f6b7a" : "#8fbf92"}`,
+                                        padding: 0,
+                                        fontSize: 0,
+                                        flexShrink: 0,
+                                      }}
+                                      aria-label={`Set color for ${habit}`}
+                                    />
+
+                                    <button
+                                      type="button"
+                                      onClick={() => archiveHabit(habit)}
+                                      disabled={editingHabit === habit}
+                                      title="Archive habit"
+                                      style={{
+                                        border: "none",
+                                        background: "transparent",
+                                        color: editingHabit === habit ? (nightMode ? "#5f6b7a" : "#8fbf92") : habitTheme.muted,
+                                        fontWeight: 700,
+                                        cursor: editingHabit === habit ? "not-allowed" : "pointer",
+                                        lineHeight: 1,
+                                        fontSize: 14,
+                                        padding: "0 2px",
+                                      }}
+                                      aria-label={`Archive ${habit}`}
+                                    >
+                                      ↓
+                                    </button>
                                     <button
                                       type="button"
                                       onClick={() => removeHabit(habit)}
@@ -1522,6 +1760,8 @@ export default function HabitTracker() {
                                         fontWeight: 800,
                                         cursor: editingHabit === habit ? "not-allowed" : "pointer",
                                         lineHeight: 1,
+                                        fontSize: 16,
+                                        padding: "0 2px",
                                       }}
                                       aria-label={`Remove ${habit}`}
                                     >
@@ -1537,11 +1777,13 @@ export default function HabitTracker() {
                                 const isFill = value === "fill";
                                 const isOutOfMonth = day > daysInMonth;
                                 const noteText = habitNotes[key] || "";
+                                const isWeekBoundary = day % 7 === 1 && day !== 1;
                                 return (
                                   <td
                                     key={key}
                                     onClick={(e) => handleHabitCellClick(habit, day, e)}
                                     className={completionPulseKey === key ? "habit-complete-pulse" : ""}
+                                    title={noteText || undefined}
                                     style={{
                                       cursor: isOutOfMonth ? "not-allowed" : "pointer",
                                       background: isOutOfMonth
@@ -1561,13 +1803,10 @@ export default function HabitTracker() {
                                       verticalAlign: "middle",
                                       fontSize: 18,
                                       fontWeight: 700,
-                                      border: isOutOfMonth
-                                        ? `1px dashed ${nightMode ? "#39424d" : "#c5d8c5"}`
-                                        : isFill
-                                        ? `2px solid ${nightMode ? "#93a0af" : "#14532d"}`
-                                        : isDot
-                                        ? `1.5px solid ${nightMode ? "#5d6a7a" : "#6aaa6d"}`
-                                        : `1px solid ${nightMode ? "#39424d" : "#bdbdbd"}`,
+                                      borderLeft: isWeekBoundary ? `2px solid ${nightMode ? "#39424d" : "#81c784"}` : `1px solid ${nightMode ? "#39424d" : "#bdbdbd"}`,
+                                      borderTop: `1px solid ${nightMode ? "#39424d" : "#bdbdbd"}`,
+                                      borderBottom: `1px solid ${nightMode ? "#39424d" : "#bdbdbd"}`,
+                                      borderRight: `1px solid ${nightMode ? "#39424d" : "#bdbdbd"}`,
                                       boxShadow: isOutOfMonth
                                         ? "none"
                                         : isFill
@@ -1712,8 +1951,8 @@ export default function HabitTracker() {
 
           <p style={{ color: habitTheme.heading, margin: "0 0 6px", fontWeight: 700 }}>Pattern Insights</p>
           <div style={{ display: "grid", gap: 6, marginBottom: 14 }}>
-            {patternInsights.map((line) => (
-              <p key={line} style={{ margin: 0, color: habitTheme.heading, lineHeight: 1.4 }}>
+            {patternInsights.map((line, i) => (
+              <p key={`insight-${i}`} style={{ margin: 0, color: habitTheme.heading, lineHeight: 1.4 }}>
                 {line}
               </p>
             ))}
@@ -1723,8 +1962,8 @@ export default function HabitTracker() {
             <>
               <p style={{ color: habitTheme.heading, margin: "0 0 6px", fontWeight: 700 }}>Habit Notes</p>
               <div style={{ display: "grid", gap: 4, marginBottom: 12 }}>
-                {noteHighlights.map((line) => (
-                  <p key={line} style={{ margin: 0, color: habitTheme.body, fontSize: 13, lineHeight: 1.35 }}>
+                {noteHighlights.map((line, i) => (
+                  <p key={`note-${i}`} style={{ margin: 0, color: habitTheme.body, fontSize: 13, lineHeight: 1.35 }}>
                     {line}
                   </p>
                 ))}
@@ -1736,6 +1975,69 @@ export default function HabitTracker() {
             <p style={{ color: habitTheme.body, margin: "0 0 14px", fontSize: 14 }}>
               Gentle support habits: {lowestHabits.map((h) => h.habit).join(", ")}.
             </p>
+          )}
+
+          {habitsWithStreaks.length > 0 && (
+            <div style={{ borderTop: `1px solid ${habitTheme.border}`, paddingTop: 10, marginBottom: 14 }}>
+              <p style={{ color: habitTheme.heading, fontWeight: 700, margin: "0 0 8px" }}>Habit Progress</p>
+              <div style={{ display: "grid", gap: 8 }}>
+                {habitsWithStreaks.map(({ habit, rate, currentStreak, bestStreak }, i) => (
+                  <div key={`streak-${i}`}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                      <span style={{ color: habitTheme.body, fontSize: 12, fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{habit}</span>
+                      <div style={{ display: "flex", gap: 4, flexShrink: 0, alignItems: "center" }}>
+                        <span style={{ background: currentStreak > 0 ? (nightMode ? "rgba(34,197,94,0.18)" : "rgba(26,110,54,0.12)") : (nightMode ? "#242b33" : "#e8f0e8"), color: currentStreak > 0 ? (nightMode ? "#4ade80" : "#1a6e36") : habitTheme.muted, fontWeight: 700, fontSize: 10, padding: "2px 7px", borderRadius: 999, whiteSpace: "nowrap" }}>
+                          {currentStreak}d 🔥
+                        </span>
+                        <span style={{ background: nightMode ? "#242b33" : "#e8f0e8", color: habitTheme.muted, fontWeight: 600, fontSize: 10, padding: "2px 7px", borderRadius: 999, whiteSpace: "nowrap" }}>
+                          best {bestStreak}d
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ background: nightMode ? "#242b33" : "#d8ead8", borderRadius: 999, height: 6, overflow: "hidden" }}>
+                      <div style={{ width: `${Math.round(rate * 100)}%`, height: "100%", background: rate >= 0.7 ? "#2e7d32" : rate >= 0.4 ? "#66bb6a" : "#a5d6a7", borderRadius: 999, transition: "width 0.4s ease" }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {habits.length > 0 && analysisDays > 0 && (
+            <div style={{ borderTop: `1px solid ${habitTheme.border}`, paddingTop: 10, marginBottom: 14 }}>
+              <p style={{ color: habitTheme.heading, fontWeight: 700, margin: "0 0 10px" }}>Monthly Heatmap</p>
+              <div style={{ display: "grid", gap: 10 }}>
+                {habits.map((habit) => (
+                  <div key={`heatmap-${habit}`}>
+                    <p style={{ margin: "0 0 4px", color: habitTheme.body, fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{habit}</p>
+                    <div style={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+                      {Array.from({ length: analysisDays }, (_, i) => {
+                        const day = i + 1;
+                        const state = checked[`${habit}-${day}`];
+                        let bg;
+                        if (state === "dot") bg = nightMode ? "#22c55e" : "#2e7d32";
+                        else if (state === "fill") bg = nightMode ? "#f5a623" : "#e67e00";
+                        else bg = nightMode ? "#1e2630" : "#dde8dd";
+                        return (
+                          <div
+                            key={`hm-${habit}-${day}`}
+                            title={`${habit} - Day ${day}: ${state === "dot" ? "done" : state === "fill" ? "skipped" : "no data"}`}
+                            style={{
+                              width: 12,
+                              height: 12,
+                              borderRadius: 3,
+                              background: bg,
+                              opacity: state === "dot" ? 1 : state === "fill" ? 0.65 : 0.25,
+                              flexShrink: 0,
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
 
           <div
@@ -1826,6 +2128,25 @@ export default function HabitTracker() {
         </div>
       </div>
       )}
+
+      {archivedHabits.length > 0 && !softFocusMode && (
+        <div style={{ maxWidth: 520, marginTop: 20, background: nightMode ? "#1b2026" : "#f4faf2", border: `1px solid ${nightMode ? "#2b3139" : "#c5dec6"}`, borderRadius: 12, padding: 14 }}>
+          <p style={{ color: nightMode ? "#9aa3af" : "#2e7d32", fontWeight: 700, margin: "0 0 8px", fontSize: 15 }}>🗄 Archived Habits</p>
+          <div style={{ display: "grid", gap: 6 }}>
+            {archivedHabits.map((h, i) => (
+              <div key={`archived-${i}`} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ color: nightMode ? "#9aa3af" : "#555", fontSize: 14, flex: 1 }}>{h}</span>
+                <button
+                  onClick={() => unarchiveHabit(h)}
+                  style={{ border: `1px solid ${nightMode ? "#2b3139" : "#a5d6a7"}`, background: "transparent", color: nightMode ? "#9aa3af" : "#2e7d32", borderRadius: 6, padding: "3px 9px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}
+                >
+                  Restore
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <style jsx>{`
         .habit-complete-pulse {
           animation: habitCompletePulse 0.4s ease-out;
@@ -1893,6 +2214,141 @@ export default function HabitTracker() {
           }
         }
       `}</style>
+      {/* Fixed-position color picker — renders above everything, not clipped by table overflow */}
+      {colorPickerOpenFor && (
+        <div
+          data-color-picker="true"
+          style={{
+            position: "fixed",
+            top: colorPickerPos.y,
+            left: colorPickerPos.x,
+            background: nightMode ? "#2b3139" : "#fff",
+            border: `1px solid ${nightMode ? "#39424d" : "#ccc"}`,
+            borderRadius: 12,
+            padding: 8,
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 5,
+            zIndex: 9999,
+            boxShadow: "0 6px 24px rgba(0,0,0,0.22)",
+            maxWidth: 160,
+          }}
+        >
+          {["#ef5350","#ff9800","#ffca28","#43a047","#26a69a","#1e88e5","#5c6bc0","#8e24aa","#e91e63","#795548","#546e7a"].map((c) => (
+            <button
+              key={c}
+              type="button"
+              title={c}
+              onClick={() => { setHabitColor(colorPickerOpenFor, c); setColorPickerOpenFor(null); }}
+              style={{ width: 20, height: 20, borderRadius: "50%", border: habitColors[colorPickerOpenFor] === c ? "2.5px solid #fff" : `1.5px solid ${nightMode ? "#5f6b7a" : "#ccc"}`, background: c, cursor: "pointer", padding: 0, boxShadow: habitColors[colorPickerOpenFor] === c ? "0 0 0 2px #555" : "none" }}
+            />
+          ))}
+          <button
+            key="remove"
+            type="button"
+            title="Remove color"
+            onClick={() => { setHabitColor(colorPickerOpenFor, ""); setColorPickerOpenFor(null); }}
+            style={{ width: 20, height: 20, borderRadius: "50%", border: `1.5px solid ${nightMode ? "#5f6b7a" : "#e0e0e0"}`, background: nightMode ? "#3a4250" : "#f5f5f5", cursor: "pointer", padding: 0, fontSize: 11, color: nightMode ? "#fca5a5" : "#b91c1c", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}
+            aria-label="Remove color"
+          >✕</button>
+        </div>
+      )}
+
+      {notePopover.habit !== null && (
+        <div
+          onClick={() => setNotePopover({ habit: null, day: null, text: "" })}
+          style={{ position: "fixed", inset: 0, background: "#0004", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: nightMode ? "#2b3139" : "#fff", borderRadius: 14, padding: 20, width: 320, maxWidth: "90vw", boxShadow: "0 8px 32px #0004" }}
+          >
+            <p style={{ margin: "0 0 10px", fontWeight: 700, color: nightMode ? "#e0e6ed" : "#1b2026", fontSize: 15 }}>
+              Note for <em>{notePopover.habit}</em> — Day {notePopover.day}
+            </p>
+            <textarea
+              autoFocus
+              value={notePopover.text}
+              onChange={(e) => setNotePopover((p) => ({ ...p, text: e.target.value }))}
+              rows={4}
+              maxLength={200}
+              placeholder="Add a note…"
+              style={{ width: "100%", boxSizing: "border-box", borderRadius: 8, border: `1px solid ${nightMode ? "#39424d" : "#ccc"}`, background: nightMode ? "#1b2026" : "#f8f8f8", color: nightMode ? "#e0e6ed" : "#1b2026", padding: "8px 10px", fontSize: 14, resize: "vertical" }}
+            />
+            <p style={{ margin: "4px 0 0", textAlign: "right", fontSize: 11, color: nightMode ? "#6a8a70" : "#888" }}>{notePopover.text.length}/200</p>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
+              <button
+                onClick={() => setNotePopover({ habit: null, day: null, text: "" })}
+                style={{ border: `1px solid ${nightMode ? "#39424d" : "#ccc"}`, background: "transparent", color: nightMode ? "#a0aab4" : "#555", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontWeight: 600 }}
+              >Cancel</button>
+              <button
+                onClick={() => {
+                  saveHabitNote(notePopover.habit, notePopover.day, notePopover.text);
+                  setNotePopover({ habit: null, day: null, text: "" });
+                }}
+                style={{ border: "none", background: "#43a047", color: "#fff", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontWeight: 700 }}
+              >Save Note</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Per-habit stats popup */}
+      {habitStatsPopover && (() => {
+        const sHabit = habitStatsPopover;
+        const sStats = habitStats.find((s) => s.habit === sHabit) || { done: 0, missed: 0, rate: 0 };
+        const sStreak = habitsWithStreaks.find((s) => s.habit === sHabit) || { currentStreak: 0, bestStreak: 0 };
+        const sNotes = Object.entries(habitNotes)
+          .filter(([k]) => k.startsWith(`${sHabit}-`))
+          .map(([k, v]) => ({ day: k.replace(`${sHabit}-`, ""), note: v }))
+          .slice(-8);
+        return (
+          <div
+            onClick={() => setHabitStatsPopover(null)}
+            style={{ position: "fixed", inset: 0, background: "#0006", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{ background: nightMode ? "#1e2530" : "#fff", borderRadius: 18, padding: 24, width: 360, maxWidth: "92vw", boxShadow: "0 12px 40px #0004", border: `1px solid ${habitTheme.border}` }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <p style={{ margin: 0, fontWeight: 800, color: habitTheme.heading, fontSize: 17 }}>📊 {sHabit}</p>
+                <button onClick={() => setHabitStatsPopover(null)} aria-label="Close stats" style={{ border: "none", background: "transparent", color: habitTheme.muted, fontSize: 22, cursor: "pointer", lineHeight: 1, padding: "0 4px" }}>×</button>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
+                <div style={{ background: nightMode ? "#242b33" : "#f3fbf3", borderRadius: 10, padding: "10px 8px", textAlign: "center" }}>
+                  <p style={{ margin: "0 0 2px", fontSize: 10, color: habitTheme.muted, fontWeight: 600, textTransform: "uppercase" }}>Completion</p>
+                  <p style={{ margin: 0, fontSize: 20, fontWeight: 800, color: nightMode ? "#4ade80" : "#1a6e36" }}>{Math.round(sStats.rate * 100)}%</p>
+                </div>
+                <div style={{ background: nightMode ? "#242b33" : "#f3fbf3", borderRadius: 10, padding: "10px 8px", textAlign: "center" }}>
+                  <p style={{ margin: "0 0 2px", fontSize: 10, color: habitTheme.muted, fontWeight: 600, textTransform: "uppercase" }}>Streak</p>
+                  <p style={{ margin: 0, fontSize: 20, fontWeight: 800, color: habitTheme.heading }}>{sStreak.currentStreak}d</p>
+                </div>
+                <div style={{ background: nightMode ? "#242b33" : "#f3fbf3", borderRadius: 10, padding: "10px 8px", textAlign: "center" }}>
+                  <p style={{ margin: "0 0 2px", fontSize: 10, color: habitTheme.muted, fontWeight: 600, textTransform: "uppercase" }}>Best</p>
+                  <p style={{ margin: 0, fontSize: 20, fontWeight: 800, color: habitTheme.heading }}>{sStreak.bestStreak}d</p>
+                </div>
+              </div>
+              <div style={{ background: nightMode ? "#242b33" : "#f3fbf3", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
+                <p style={{ margin: "0 0 4px", fontSize: 12, fontWeight: 700, color: habitTheme.muted }}>Done / Skipped</p>
+                <p style={{ margin: 0, color: habitTheme.body, fontSize: 14 }}>{sStats.done} done · {sStats.missed} skipped</p>
+              </div>
+              {sNotes.length > 0 && (
+                <div>
+                  <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 700, color: habitTheme.muted }}>Recent Notes</p>
+                  <div style={{ display: "grid", gap: 4 }}>
+                    {sNotes.map(({ day, note }) => (
+                      <p key={day} style={{ margin: 0, color: habitTheme.body, fontSize: 12, lineHeight: 1.35 }}>
+                        <span style={{ color: habitTheme.muted }}>Day {day}:</span> {note}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </main>
   );
 }

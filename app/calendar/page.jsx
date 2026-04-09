@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { getStoredNightModePreference, isNightModeEnabled } from "@/lib/nightModePreference";
+import { useNightMode } from "@/lib/useNightMode";
+import NavBar from "@/app/components/NavBar";
 
 const MOODS = [
   { key: "warm", label: "Warm", color: "#F4C7A1", tint: "#fff3ea" },
@@ -34,35 +34,14 @@ export default function CalendarPage() {
   const [photosByDate, setPhotosByDate] = useState({});
   const [habitChecks, setHabitChecks] = useState({});
   const [habitList, setHabitList] = useState([]);
-  const [nightMode, setNightMode] = useState(false);
+  const nightMode = useNightMode();
+  const [journalMoodByDate, setJournalMoodByDate] = useState({});
 
   const router = useRouter();
   const today = new Date();
-  const calendarYear = 2026;
-  const [month, setMonth] = useState(today.getFullYear() === 2026 ? today.getMonth() : 0);
+  const [calendarYear, setCalendarYear] = useState(today.getFullYear());
+  const [month, setMonth] = useState(today.getMonth());
   const daysInMonth = new Date(calendarYear, month + 1, 0).getDate();
-
-  useEffect(() => {
-    const syncNightMode = () => {
-      const preference = getStoredNightModePreference();
-      setNightMode(isNightModeEnabled(preference));
-    };
-
-    syncNightMode();
-
-    const intervalId = window.setInterval(syncNightMode, 60 * 1000);
-    const handleStorage = (event) => {
-      if (!event.key || event.key === "hibi_night_mode_preference") {
-        syncNightMode();
-      }
-    };
-    window.addEventListener("storage", handleStorage);
-
-    return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener("storage", handleStorage);
-    };
-  }, []);
 
   function notesStorageKey(activeUserId) {
     return `calendar_notes_${activeUserId || "guest"}_${calendarYear}_${String(month + 1).padStart(2, "0")}`;
@@ -232,6 +211,27 @@ export default function CalendarPage() {
   }, [month, daysInMonth, calendarYear, userId]);
 
   useEffect(() => {
+    if (!userId) return;
+    try {
+      const key = `hibi_journal_${userId}_${calendarYear}_all`;
+      const raw = localStorage.getItem(key);
+      const parsed = raw ? JSON.parse(raw) : {};
+      const moodMap = {};
+      if (parsed && typeof parsed === "object") {
+        Object.entries(parsed).forEach(([date, entries]) => {
+          if (Array.isArray(entries) && entries.length > 0) {
+            const first = entries.find((e) => e.mood) || entries[0];
+            if (first?.mood) moodMap[date] = first.mood;
+          }
+        });
+      }
+      setJournalMoodByDate(moodMap);
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, [userId, calendarYear, month]);
+
+  useEffect(() => {
     const initialDay = today.getFullYear() === calendarYear && today.getMonth() === month ? today.getDate() : 1;
     const date = ymd(initialDay);
     setSelectedDate(date);
@@ -332,10 +332,20 @@ export default function CalendarPage() {
   function addPhoto(file) {
     if (!selectedDate || !file) return;
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const src = String(reader.result || "");
-      if (!src) return;
+    const img = new window.Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const MAX = 800;
+      const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      const src = canvas.toDataURL("image/jpeg", 0.7);
 
       const existing = photosByDate[selectedDate] || [];
       const nextPhotosForDate = [src, ...existing].slice(0, 6);
@@ -343,7 +353,8 @@ export default function CalendarPage() {
       setPhotosByDate(nextPhotos);
       persistRitual(todosByDate, moodByDate, reflectionByDate, nextPhotos);
     };
-    reader.readAsDataURL(file);
+    img.onerror = () => URL.revokeObjectURL(objectUrl);
+    img.src = objectUrl;
   }
 
   function removePhoto(index) {
@@ -499,96 +510,103 @@ export default function CalendarPage() {
   }
 
   const calendarTheme = {
-    panel: nightMode ? "#171a1f" : "#f5faf4",
-    border: nightMode ? "#2b3139" : "#c9ddc9",
-    heading: nightMode ? "#e9ecef" : "#14532d",
-    body: nightMode ? "#c9d1da" : "#1b5e20",
-    gridShell: nightMode ? "#1b2026" : "#c8e6c9",
-    gridShadow: nightMode ? "0 2px 12px #00000066" : "0 2px 12px #a5d6a7aa",
-    dayCellBg: nightMode ? "#1f252d" : null,
-    dayCellBorder: nightMode ? "#38414b" : null,
-    dayCardBg: nightMode ? "#171a1f" : null,
-    dayCardBorder: nightMode ? "#2b3139" : null,
-    inputBg: nightMode ? "#111418" : "#fff",
-    inputBorder: nightMode ? "#353c46" : "#a9c8a9",
+    panel: nightMode ? "rgba(12,16,22,0.82)" : "rgba(255,255,255,0.82)",
+    border: nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)",
+    heading: nightMode ? "#dde3ea" : "#0d2a14",
+    body: nightMode ? "#b0bac8" : "#1a4a22",
+    muted: nightMode ? "#6a8a70" : "#4a7a50",
+    gridShell: nightMode ? "rgba(15,20,26,0.85)" : "rgba(240,250,240,0.90)",
+    gridShadow: nightMode ? "0 4px 24px rgba(0,0,0,0.55)" : "0 4px 24px rgba(46,125,50,0.12)",
+    dayCellBg: nightMode ? "rgba(20,26,34,0.88)" : "rgba(255,255,255,0.75)",
+    dayCellBorder: nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)",
+    dayCardBg: nightMode ? "rgba(12,16,22,0.82)" : "rgba(255,255,255,0.82)",
+    dayCardBorder: nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)",
+    inputBg: nightMode ? "rgba(7,10,15,0.9)" : "rgba(255,255,255,0.95)",
+    inputBorder: nightMode ? "rgba(255,255,255,0.12)" : "rgba(46,125,50,0.25)",
+    glass: nightMode ? "rgba(12,16,22,0.82)" : "rgba(255,255,255,0.82)",
+    glassBorder: nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)",
+    accent: nightMode ? "#22c55e" : "#1a6e36",
   };
 
   return (
     <main
       style={{
-        padding: 24,
+        padding: "28px 24px",
         minHeight: "100vh",
         background: nightMode
-          ? "linear-gradient(165deg, #0f1113 0%, #15181c 50%, #1c2025 100%)"
-          : "linear-gradient(150deg, #fdf6ec 0%, #e8f5e9 55%, #c8e6c9 100%)",
-        fontFamily: "system-ui, sans-serif",
+          ? "linear-gradient(145deg, #070b0d 0%, #0c1117 35%, #101820 70%, #0e1a14 100%)"
+          : "linear-gradient(145deg, #f7fbf4 0%, #eef7e8 40%, #e0f0da 75%, #d4ead4 100%)",
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif",
+        animation: "hibiFadeIn 0.35s ease",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 18, position: "relative" }}>
-        <Link
-          href="/"
-          style={{
-            position: "absolute",
-            left: 0,
-            top: "50%",
-            transform: "translateY(-50%)",
-            textDecoration: "none",
-            color: nightMode ? "#e9ecef" : "#14532d",
-            fontWeight: 900,
-            fontSize: 28,
-            letterSpacing: 1.5,
-            paddingLeft: 12,
-            userSelect: "none",
-          }}
-        >
-          Hibi
-        </Link>
-        <Link href="/calendar" style={{ textDecoration: "none", background: nightMode ? "#2b3139" : "#2e7d32", color: "#fff", padding: "10px 16px", borderRadius: 10, fontWeight: 700, boxShadow: nightMode ? "0 2px 8px #00000088" : "0 2px 8px #2e7d3240" }}>
-          Calendar
-        </Link>
-        <Link href="/habits" style={{ textDecoration: "none", background: nightMode ? "#1c2127" : "#e8f5e9", color: nightMode ? "#e9ecef" : "#14532d", padding: "10px 16px", borderRadius: 10, fontWeight: 700, border: `1.5px solid ${nightMode ? "#2b3139" : "#2e7d32"}` }}>
-          Habit Tracker
-        </Link>
-        <Link href="/journal" style={{ textDecoration: "none", background: nightMode ? "#1c2127" : "#e8f5e9", color: nightMode ? "#e9ecef" : "#14532d", padding: "10px 16px", borderRadius: 10, fontWeight: 700, border: `1.5px solid ${nightMode ? "#2b3139" : "#2e7d32"}` }}>
-          Journal
-        </Link>
-        <Link href="/profile" style={{ textDecoration: "none", background: nightMode ? "#1c2127" : "#e8f5e9", color: nightMode ? "#e9ecef" : "#14532d", padding: "10px 16px", borderRadius: 10, fontWeight: 700, border: `1.5px solid ${nightMode ? "#2b3139" : "#2e7d32"}` }}>
-          Profile
-        </Link>
-        <button
-          onClick={async () => {
-            if (supabase) await supabase.auth.signOut();
-            router.replace("/login");
-          }}
-          style={{ textDecoration: "none", background: nightMode ? "#1c2127" : "#e8f5e9", color: nightMode ? "#e9ecef" : "#14532d", padding: "10px 16px", borderRadius: 10, fontWeight: 700, border: `1.5px solid ${nightMode ? "#2b3139" : "#2e7d32"}`, cursor: "pointer" }}
-        >
-          Log Out
-        </button>
+      <div style={{ maxWidth: 1000, margin: "0 auto 24px" }}>
+        <NavBar activePage="calendar" />
       </div>
 
-      <section style={{ maxWidth: 1080, margin: "0 auto 14px", background: calendarTheme.panel, border: `1px solid ${calendarTheme.border}`, borderRadius: 16, padding: "12px 14px", boxShadow: nightMode ? "0 2px 10px #00000055" : "0 2px 10px #94b89422" }}>
+      <section style={{ maxWidth: 1080, margin: "0 auto 14px", background: calendarTheme.glass, backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)", border: `1px solid ${calendarTheme.glassBorder}`, borderRadius: 18, padding: "12px 18px", boxShadow: nightMode ? "0 4px 24px rgba(0,0,0,0.5)" : "0 4px 20px rgba(46,125,50,0.10)" }}>
         <p style={{ margin: 0, color: calendarTheme.heading, fontSize: 13, fontWeight: 700 }}>Month Overview</p>
         <p style={{ margin: "6px 0 0", color: calendarTheme.body, fontSize: 16 }}>{monthSummary}</p>
       </section>
 
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "center", gap: 26, flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 670px", maxWidth: 720 }}>
-          <h1 style={{ color: calendarTheme.heading, fontWeight: 800, fontSize: 36, letterSpacing: 1, marginBottom: 4 }}>Calendar</h1>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+            <h1 style={{ color: calendarTheme.heading, fontWeight: 800, fontSize: "clamp(26px, 5vw, 38px)", letterSpacing: -0.5, margin: 0 }}>Calendar</h1>
+            <button
+              onClick={() => {
+                setCalendarYear(today.getFullYear());
+                setMonth(today.getMonth());
+                setSelectedDate(ymd(today.getDate()));
+              }}
+              style={{
+                background: "#388e3c",
+                color: "#fff",
+                border: "none",
+                borderRadius: 8,
+                fontWeight: 700,
+                padding: "8px 16px",
+                cursor: "pointer",
+                fontSize: 15,
+                marginLeft: 12,
+              }}
+            >
+              Jump to Today
+            </button>
+          </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 10, color: nightMode ? "#b6bdc7" : "#388e3c", fontWeight: 600, fontSize: 24, marginBottom: 10 }}>
             <button
-              onClick={() => setMonth((m) => Math.max(0, m - 1))}
-              disabled={month === 0}
-              style={{ border: "none", background: month === 0 ? (nightMode ? "#2a2f36" : "#cfd8dc") : (nightMode ? "#2b3139" : "#2e7d32"), color: "#fff", borderRadius: 999, width: 34, height: 34, cursor: month === 0 ? "not-allowed" : "pointer", fontSize: 18, fontWeight: 700 }}
+              onClick={() => {
+                if (month === 0) { setCalendarYear((y) => y - 1); setMonth(11); }
+                else setMonth((m) => m - 1);
+              }}
+              style={{ border: "none", background: nightMode ? "#2b3139" : "#2e7d32", color: "#fff", borderRadius: 999, width: 34, height: 34, cursor: "pointer", fontSize: 18, fontWeight: 700 }}
               aria-label="Previous month"
             >
               ←
             </button>
-            <span>{monthNames[month]} {calendarYear}</span>
             <button
-              onClick={() => setMonth((m) => Math.min(11, m + 1))}
-              disabled={month === 11}
-              style={{ border: "none", background: month === 11 ? (nightMode ? "#2a2f36" : "#cfd8dc") : (nightMode ? "#2b3139" : "#2e7d32"), color: "#fff", borderRadius: 999, width: 34, height: 34, cursor: month === 11 ? "not-allowed" : "pointer", fontSize: 18, fontWeight: 700 }}
+              onClick={() => setCalendarYear((y) => y - 1)}
+              style={{ border: "none", background: "transparent", color: nightMode ? "#6a8a70" : "#4a7a50", borderRadius: 6, padding: "2px 6px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+              aria-label="Previous year"
+            >
+              ‹{calendarYear - 1}
+            </button>
+            <span style={{ minWidth: 160, textAlign: "center" }}>{monthNames[month]} {calendarYear}</span>
+            <button
+              onClick={() => setCalendarYear((y) => y + 1)}
+              style={{ border: "none", background: "transparent", color: nightMode ? "#6a8a70" : "#4a7a50", borderRadius: 6, padding: "2px 6px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+              aria-label="Next year"
+            >
+              {calendarYear + 1}›
+            </button>
+            <button
+              onClick={() => {
+                if (month === 11) { setCalendarYear((y) => y + 1); setMonth(0); }
+                else setMonth((m) => m + 1);
+              }}
+              style={{ border: "none", background: nightMode ? "#2b3139" : "#2e7d32", color: "#fff", borderRadius: 999, width: 34, height: 34, cursor: "pointer", fontSize: 18, fontWeight: 700 }}
               aria-label="Next month"
             >
               →
@@ -631,6 +649,7 @@ export default function CalendarPage() {
                 <button
                   key={date}
                   onClick={() => openDay(day)}
+                  title={notes[date] ? String(notes[date]).slice(0, 80) : undefined}
                   style={{
                     aspectRatio: "1 / 1",
                     width: "100%",
@@ -651,7 +670,6 @@ export default function CalendarPage() {
                   }}
                 >
                   <span style={{ fontSize: 18, fontWeight: 700, lineHeight: 1 }}>{day}</span>
-
                   {thumb ? (
                     <img
                       src={thumb}
@@ -659,27 +677,30 @@ export default function CalendarPage() {
                       style={{ position: "absolute", right: 6, top: 6, width: 16, height: 16, borderRadius: 4, objectFit: "cover", boxShadow: "0 1px 4px #00000022" }}
                     />
                   ) : null}
+                  {journalMoodByDate[date] ? (
+                    <span
+                      title={`Journal mood: ${journalMoodByDate[date]}`}
+                      style={{ position: "absolute", left: 5, bottom: 5, width: 7, height: 7, borderRadius: "50%", background: (MOODS.find((m) => m.key === journalMoodByDate[date]) || MOODS[1]).color, boxShadow: "0 0 0 1.5px #fff4" }}
+                    />
+                  ) : null}
 
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: mood.color, opacity: 0.92 }} />
-                    <span style={{ width: 12, height: 12, display: "grid", placeItems: "center" }}>
-                      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-                        <circle cx="6" cy="6" r="4" fill="none" stroke={nightMode ? "#3a4350" : "#d6e5d6"} strokeWidth="1" />
-                        <circle
-                          cx="6"
-                          cy="6"
-                          r="4"
-                          fill="none"
-                          stroke="#7fae86"
-                          strokeWidth="1"
-                          strokeLinecap="round"
-                          strokeDasharray={ringCircumference}
-                          strokeDashoffset={ringOffset}
-                          transform="rotate(-90 6 6)"
-                        />
-                      </svg>
-                    </span>
-                  </div>
+                  <span style={{ width: 22, height: 22, display: "grid", placeItems: "center", margin: "4px auto 0" }}>
+                    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+                      <circle cx="9" cy="9" r="8" fill={mood.color} stroke={nightMode ? "#3a4350" : "#d6e5d6"} strokeWidth="1.5" />
+                      <circle
+                        cx="9"
+                        cy="9"
+                        r="7"
+                        fill="none"
+                        stroke="#7fae86"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeDasharray={2 * Math.PI * 7}
+                        strokeDashoffset={2 * Math.PI * 7 * (1 - progress)}
+                        transform="rotate(-90 9 9)"
+                      />
+                    </svg>
+                  </span>
                 </button>
               );
             })}
@@ -711,6 +732,60 @@ export default function CalendarPage() {
         </div>
 
         <aside style={{ flex: "0 0 360px", width: 360, maxWidth: "100%" }}>
+          {/* Mini Month View */}
+          <div style={{ marginBottom: 24, background: nightMode ? "#1b2026" : "#f4faf2", border: `1px solid ${nightMode ? "#2b3139" : "#c8e6c9"}`, borderRadius: 12, padding: 12 }}>
+            <div style={{ textAlign: "center", fontWeight: 700, color: nightMode ? "#e9ecef" : "#14532d", fontSize: 18, marginBottom: 6 }}>
+              {monthNames[month]} {calendarYear}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+              {weekdayNames.map((wd) => (
+                <div key={wd} style={{ textAlign: "center", color: nightMode ? "#b6bdc7" : "#388e3c", fontWeight: 700, fontSize: 13 }}>{wd[0]}</div>
+              ))}
+              {(() => {
+                const firstDay = new Date(calendarYear, month, 1).getDay();
+                const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+                const boxes = [];
+                for (let i = 0; i < firstDay; i++) boxes.push(null);
+                for (let day = 1; day <= daysInMonth; day++) boxes.push(day);
+                while (boxes.length % 7 !== 0) boxes.push(null);
+                return boxes.map((day, idx) => {
+                  if (!day) return <div key={`mini-empty-${idx}`} />;
+                  const date = ymd(day);
+                  const isToday = today.getFullYear() === calendarYear && today.getMonth() === month && today.getDate() === day;
+                  const isSelected = selectedDate === date;
+                  const mood = getMoodMeta(date);
+                  return (
+                    <button
+                      key={`mini-${date}`}
+                      onClick={() => { setMonth(month); setSelectedDate(date); }}
+                      style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: 8,
+                        border: isSelected ? `2px solid #388e3c` : isToday ? `1.5px solid #2e7d32` : `1px solid #cbd5e1`,
+                        background: mood.tint,
+                        color: isToday ? "#388e3c" : "#222",
+                        fontWeight: 600,
+                        fontSize: 14,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        margin: 0,
+                        padding: 0,
+                        cursor: "pointer",
+                        boxShadow: isSelected ? "0 0 0 2px #388e3c55" : undefined,
+                        transition: "box-shadow 0.2s, border 0.2s",
+                      }}
+                      title={mood.label}
+                    >
+                      {day}
+                    </button>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+          {/* ...existing day card code follows... */}
           <div
             key={`day-card-${selectedDate}`}
             className="day-card-transition"
@@ -783,7 +858,11 @@ export default function CalendarPage() {
             </div>
 
             <div>
+              <label htmlFor="reflection-input" style={{ display: "block", color: calendarTheme.heading, fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
+                Reflection
+              </label>
               <input
+                id="reflection-input"
                 value={reflectionByDate[selectedDate] || ""}
                 onChange={(e) => setReflection(e.target.value)}
                 placeholder="Tiny reflection"
