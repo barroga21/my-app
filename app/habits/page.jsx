@@ -1363,19 +1363,20 @@ export default function HabitTracker() {
             className="hibi-back-to-full"
             onClick={() => setSoftFocusMode(false)}
             style={{
-              border: `2px solid ${nightMode ? "#4ade80" : "#1a6e36"}`,
-              background: nightMode ? "#1e3a28" : "#d4ead4",
-              color: habitTheme.heading,
+              border: "none",
+              background: "#4ade80",
+              color: "#0d2a14",
               borderRadius: 999,
-              fontSize: 15,
-              fontWeight: 800,
+              fontSize: 16,
+              fontWeight: 900,
               cursor: "pointer",
-              padding: "12px 28px",
+              padding: "14px 32px",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               gap: 6,
               lineHeight: 1,
+              minWidth: 160,
             }}
           >
             ← Full view
