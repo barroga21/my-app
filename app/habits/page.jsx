@@ -1682,6 +1682,11 @@ export default function HabitTracker() {
                                           cursor: "text",
                                           padding: 0,
                                           textAlign: "left",
+                                          overflow: "hidden",
+                                          textOverflow: "ellipsis",
+                                          whiteSpace: "nowrap",
+                                          maxWidth: "100%",
+                                          display: "block",
                                         }}
                                         aria-label={`Edit ${habit}`}
                                       >
@@ -1689,7 +1694,7 @@ export default function HabitTracker() {
                                       </button>
                                     )}
                                   </span>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 6, position: "relative" }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6, position: "relative", flexShrink: 0 }}>
                                     {editingHabit !== habit && (
                                       <button
                                         type="button"
