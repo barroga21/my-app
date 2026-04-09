@@ -1921,7 +1921,7 @@ export default function HabitTracker() {
                                         : isDot
                                         ? "0 1px 5px #9ccc9e44"
                                         : "0 1px 2px #bdbdbd22",
-                                      transition: "all var(--hibi-motion-fast) var(--hibi-ease-emphasized)",
+                                      transition: "all var(--hibi-motion-snap) var(--hibi-ease-snap)",
                                       outline: "none",
                                       userSelect: "none",
                                       position: "relative",

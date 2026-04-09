@@ -1285,7 +1285,7 @@ export default function JournalPage() {
                         flexDirection: "column",
                         gap: 1,
                         animation: "hibiSlideRight var(--hibi-motion-normal) var(--hibi-ease-enter) both",
-                        animationDelay: `${Math.min(idx * 35, 220)}ms`,
+                        animationDelay: `calc(${Math.min(idx, 7)} * var(--hibi-stagger-journal-step))`,
                         touchAction: "pan-y",
                       }}
                     >

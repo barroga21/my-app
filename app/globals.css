@@ -37,9 +37,16 @@
   --hibi-ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
   --hibi-ease-enter: cubic-bezier(0.22, 0.61, 0.36, 1);
   --hibi-ease-emphasized: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --hibi-ease-snap: cubic-bezier(0.16, 1, 0.3, 1);
+  --hibi-motion-snap: 0.14s;
   --hibi-motion-fast: 0.18s;
   --hibi-motion-normal: 0.28s;
   --hibi-motion-slow: 0.45s;
+  --hibi-stagger-home-1: 50ms;
+  --hibi-stagger-home-2: 120ms;
+  --hibi-stagger-home-3: 190ms;
+  --hibi-stagger-home-4: 260ms;
+  --hibi-stagger-journal-step: 32ms;
 }
 
 @theme inline {
