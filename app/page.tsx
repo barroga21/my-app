@@ -414,7 +414,7 @@ export default function HomePage() {
         </div>
       )}
       <div style={{ maxWidth: 900, margin: "0 auto 28px" }}>
-        <NavBar activePage={null} />
+        <NavBar activePage="home" />
       </div>
 
       <section
@@ -681,29 +681,7 @@ export default function HomePage() {
         )}
       </section>
 
-      {/* Mobile bottom navigation */}
-      <nav className={`hibi-bottom-nav${nightMode ? "" : " light"}`}>
-        <Link href="/" className="hibi-bottom-nav-item active">
-          <span className="hibi-bottom-nav-icon">🏠</span>
-          Home
-        </Link>
-        <Link href="/habits" className="hibi-bottom-nav-item">
-          <span className="hibi-bottom-nav-icon">✓</span>
-          Habits
-        </Link>
-        <Link href="/today" className="hibi-bottom-nav-item">
-          <span className="hibi-bottom-nav-icon">📓</span>
-          Journal
-        </Link>
-        <Link href="/calendar" className="hibi-bottom-nav-item">
-          <span className="hibi-bottom-nav-icon">📅</span>
-          Calendar
-        </Link>
-        <Link href="/profile" className="hibi-bottom-nav-item">
-          <span className="hibi-bottom-nav-icon">👤</span>
-          Profile
-        </Link>
-      </nav>
+
     </main>
   );
 }

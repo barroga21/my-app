@@ -194,8 +194,15 @@ body {
   border: 0;
 }
 
-/* ─── Mobile bottom navigation ──────────────────────────────────────── */
-/* Mobile bottom navigation */
+/* ─── Navigation ────────────────────────────────────────────────────── */
+/* Top pill nav: visible on desktop, hidden on mobile */
+@media (max-width: 768px) {
+  .hibi-top-nav {
+    display: none !important;
+  }
+}
+
+/* Bottom icon nav: hidden on desktop, shown on mobile */
 .hibi-bottom-nav {
   display: none;
 }
@@ -251,9 +258,8 @@ body {
     color: #1a6e36;
   }
 
-  .hibi-bottom-nav-icon {
-    font-size: 20px;
-    line-height: 1;
+  .hibi-bottom-nav-item svg {
+    display: block;
   }
 
   /* Add bottom padding to main content on mobile so bottom nav doesn't overlap */
