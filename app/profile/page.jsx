@@ -405,6 +405,11 @@ export default function ProfilePage() {
     router.replace("/login");
   }
 
+  async function handleLogout() {
+    if (supabase) await supabase.auth.signOut();
+    router.replace("/login");
+  }
+
   if (!authReady) {
     return (
       <main
@@ -560,6 +565,14 @@ export default function ProfilePage() {
             style={{ width: "100%", marginBottom: 8, border: `1px solid ${nightMode ? "rgba(255,255,255,0.10)" : "rgba(46,125,50,0.20)"}`, background: "transparent", color: nightMode ? "#6a8a70" : "#4a7a50", borderRadius: 10, padding: "9px 12px", fontWeight: 700, cursor: "pointer", fontSize: 14 }}
           >
             Export My Data (JSON)
+          </button>
+
+          <button
+            type="button"
+            onClick={handleLogout}
+            style={{ width: "100%", marginBottom: 8, border: `1px solid ${nightMode ? "rgba(255,255,255,0.12)" : "rgba(46,125,50,0.25)"}`, background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.06)", color: nightMode ? "#dde3ea" : "#1a5c2a", borderRadius: 10, padding: "9px 12px", fontWeight: 700, cursor: "pointer", fontSize: 14 }}
+          >
+            Log Out
           </button>
 
           {!showDeleteConfirm ? (

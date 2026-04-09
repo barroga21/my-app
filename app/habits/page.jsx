@@ -42,9 +42,14 @@ export default function HabitTracker() {
   const [colorPickerPos, setColorPickerPos] = useState({ x: 0, y: 0 });
   const [vacationDays, setVacationDays] = useState(new Set());
   const [habitStatsPopover, setHabitStatsPopover] = useState(null);
+  const [isMobile, setIsMobile] = useState(false);
   const cellClickTimersRef = useRef({});
   const router = useRouter();
   const nightMode = useNightMode();
+
+  useEffect(() => {
+    setIsMobile(window.innerWidth <= 768);
+  }, []);
 
   const now = new Date();
   const minYear = Math.max(now.getFullYear() - 1, 2025);
@@ -1673,11 +1678,12 @@ export default function HabitTracker() {
                                 position: "sticky",
                                 left: 0,
                                 zIndex: 1,
-                                minWidth: 120,
-                                maxWidth: 200,
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
+                                minWidth: isMobile ? 100 : 120,
+                                maxWidth: isMobile ? "none" : 200,
+                                whiteSpace: isMobile ? "normal" : "nowrap",
+                                overflow: isMobile ? "visible" : "hidden",
+                                textOverflow: isMobile ? "clip" : "ellipsis",
+                                wordBreak: isMobile ? "break-word" : undefined,
                               }}>
                                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                                   <span style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
@@ -1725,10 +1731,11 @@ export default function HabitTracker() {
                                           cursor: "text",
                                           padding: 0,
                                           textAlign: "left",
-                                          overflow: "hidden",
-                                          textOverflow: "ellipsis",
-                                          whiteSpace: "nowrap",
-                                          maxWidth: "100%",
+                                          overflow: isMobile ? "visible" : "hidden",
+                                          textOverflow: isMobile ? "clip" : "ellipsis",
+                                          whiteSpace: isMobile ? "normal" : "nowrap",
+                                          wordBreak: isMobile ? "break-word" : undefined,
+                                          maxWidth: isMobile ? "none" : "100%",
                                           display: "block",
                                         }}
                                         aria-label={`Edit ${habit}`}
