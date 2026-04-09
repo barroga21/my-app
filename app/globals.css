@@ -390,4 +390,33 @@ button, a {
     width: 18px !important;
     height: 18px !important;
   }
+
+  /* Habits — sticky name column: allow full text wrap on mobile */
+  .hibi-habits-sticky-col {
+    overflow: visible !important;
+    white-space: normal !important;
+    text-overflow: clip !important;
+    max-width: none !important;
+  }
+
+  /* Habits — name button: wrap full text on mobile */
+  .hibi-habits-name-btn {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    word-break: break-word !important;
+    max-width: none !important;
+  }
+
+  /* Habits — Back to full view: bigger tap target on mobile */
+  .hibi-back-to-full {
+    font-size: 14px !important;
+    padding: 8px 0 !important;
+    color: inherit !important;
+  }
+
+  /* Habits — Add habit form shown in soft focus mode on mobile */
+  .hibi-softfocus-add-form {
+    display: flex !important;
+  }
 }

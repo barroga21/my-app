@@ -254,6 +254,13 @@ export default function HabitTracker() {
     return () => window.removeEventListener("keydown", handleKey);
   }, []);
 
+  // Auto-enter Soft Focus on mobile screens (≤768px)
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth <= 768) {
+      setSoftFocusMode(true);
+    }
+  }, []);
+
   // Close color picker on outside click
   useEffect(() => {
     if (!colorPickerOpenFor) return;
@@ -1348,6 +1355,7 @@ export default function HabitTracker() {
         ) : (
           <button
             type="button"
+            className="hibi-back-to-full"
             onClick={() => setSoftFocusMode(false)}
             style={{
               border: "none",
@@ -1525,6 +1533,40 @@ export default function HabitTracker() {
       </form>
       )}
 
+      {softFocusMode && (
+      <form className="hibi-softfocus-add-form" onSubmit={addHabit} style={{ display: "none", gap: 8, marginBottom: 12, maxWidth: 520 }}>
+        <input
+          value={newHabit}
+          onChange={(e) => setNewHabit(e.target.value)}
+          placeholder="Add a new habit"
+          style={{
+            flex: 1,
+            padding: "10px 12px",
+            borderRadius: 8,
+            border: `1.5px solid ${nightMode ? "#39424d" : "#388e3c"}`,
+            fontSize: 15,
+            outline: "none",
+            background: habitTheme.inputBg,
+            color: habitTheme.heading,
+          }}
+        />
+        <button
+          type="submit"
+          style={{
+            background: nightMode ? "#2b3139" : "#2e7d32",
+            color: "#fff",
+            border: "none",
+            borderRadius: 8,
+            padding: "10px 14px",
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          Add Habit
+        </button>
+      </form>
+      )}
+
       {!softFocusMode && (
       <div
         style={{
@@ -1619,7 +1661,7 @@ export default function HabitTracker() {
                                 background: snapshot.isDragging ? (nightMode ? "#242b33" : "#b2dfdb") : undefined,
                               }}
                             >
-                              <td style={{
+                              <td className="hibi-habits-sticky-col" style={{
                                 background: nightMode ? "#242b33" : "#a5d6a7",
                                 color: habitTheme.heading,
                                 fontWeight: 700,
@@ -1674,6 +1716,7 @@ export default function HabitTracker() {
                                           setEditingHabit(habit);
                                           setEditingHabitValue(habit);
                                         }}
+                                        className="hibi-habits-name-btn"
                                         style={{
                                           border: "none",
                                           background: "transparent",
