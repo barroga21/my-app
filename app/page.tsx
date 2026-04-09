@@ -34,6 +34,7 @@ export default function HomePage() {
   const [oneThingInput, setOneThingInput] = useState("");
   const [oneThingSet, setOneThingSet] = useState(false);
   const [journalStreak, setJournalStreak] = useState(0);
+  const [wordsThisMonth, setWordsThisMonth] = useState(0);
   const router = useRouter();
 
   const now = new Date();
@@ -170,6 +171,16 @@ export default function HomePage() {
         else break;
       }
       setJournalStreak(jStreak);
+      let wordCount = 0;
+      const monthPrefix = `${yr}-${String(mo).padStart(2, "0")}-`;
+      Object.entries(journalData).forEach(([key, dayEntries]) => {
+        if (!key.startsWith(monthPrefix) || !Array.isArray(dayEntries)) return;
+        (dayEntries as Array<{ text?: string }>).forEach((entry) => {
+          const text = (entry.text || "").trim();
+          if (text) wordCount += text.split(/\s+/).length;
+        });
+      });
+      setWordsThisMonth(wordCount);
     } catch {}
     try {
       const habitListRaw = localStorage.getItem(`habit_list_${userId}`);
@@ -469,6 +480,10 @@ export default function HomePage() {
             <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px" }}>
               <p style={{ margin: "0 0 4px", color: nightMode ? "#6a7a6a" : "#4a7a50", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>Journal Streak</p>
               <p style={{ margin: 0, color: nightMode ? "#e9ecef" : "#0d2a14", fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}>{journalStreak}<span style={{ fontSize: 14, fontWeight: 500, color: nightMode ? "#6a7a6a" : "#4a7a50" }}> day{journalStreak === 1 ? "" : "s"}</span></p>
+            </div>
+            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px" }}>
+              <p style={{ margin: "0 0 4px", color: nightMode ? "#6a7a6a" : "#4a7a50", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>This Month</p>
+              <p style={{ margin: 0, color: nightMode ? "#e9ecef" : "#0d2a14", fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}>{wordsThisMonth >= 1000 ? `${(wordsThisMonth / 1000).toFixed(1)}k` : wordsThisMonth}<span style={{ fontSize: 14, fontWeight: 500, color: nightMode ? "#6a7a6a" : "#4a7a50" }}> words</span></p>
             </div>
           </div>
 

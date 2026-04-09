@@ -1275,7 +1275,7 @@ export default function JournalPage() {
                 value={wordGoal || ""}
                 onChange={(e) => setWordGoal(Math.max(0, parseInt(e.target.value) || 0))}
                 placeholder="words"
-                style={{ width: 54, padding: "4px 6px", borderRadius: 6, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, fontSize: 12 }}
+                style={{ width: 54, padding: "4px 6px", borderRadius: 6, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, fontSize: 11 }}
               />
             </div>
           </div>
