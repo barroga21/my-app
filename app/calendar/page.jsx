@@ -815,6 +815,7 @@ export default function CalendarPage() {
                 <button
                   key={m.key}
                   onClick={() => setMood(m.key)}
+                  className="hibi-mood-dot"
                   style={{
                     width: 18,
                     height: 18,

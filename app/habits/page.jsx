@@ -1310,10 +1310,10 @@ export default function HabitTracker() {
           <button onClick={() => setLastRemovedHabit(null)} style={{ border: "none", background: "transparent", color: nightMode ? "#9aa3af" : "#888", cursor: "pointer", fontWeight: 700, fontSize: 16, lineHeight: 1 }}>×</button>
         </div>
       )}
-      <p style={{ color: habitTheme.muted, fontWeight: 500, marginBottom: 8 }}>
+      <p className="hibi-habits-instructions" style={{ color: habitTheme.muted, fontWeight: 500, marginBottom: 8 }}>
         Tap a cell to cycle: empty → dot (done) → filled square (did not do).
       </p>
-      <p style={{ color: habitTheme.muted, fontWeight: 500, marginBottom: 8 }}>
+      <p className="hibi-habits-instructions" style={{ color: habitTheme.muted, fontWeight: 500, marginBottom: 8 }}>
         Tap a habit name to rename it. Press Enter or click away to save. Double-click a day cell to add/edit a tiny note.
       </p>
       <div

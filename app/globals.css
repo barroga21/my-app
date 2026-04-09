@@ -153,7 +153,10 @@ body {
   border-radius: 8px;
 }
 
-/* ─── Focus-visible ring (accessibility) ──────────────────────────── */
+/* Remove tap highlight on all interactive elements */
+button, a {
+  -webkit-tap-highlight-color: transparent;
+}
 :focus-visible {
   outline: 2px solid rgba(34, 197, 94, 0.75);
   outline-offset: 2px;
@@ -304,6 +307,32 @@ body {
   /* Add bottom padding to main content on mobile so bottom nav doesn't overlap */
   body {
     padding-bottom: 72px;
+  }
+
+  /* Prevent iOS Safari input zoom (requires font-size >= 16px) */
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+
+  /* Reduce heavy side padding on main pages */
+  main {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+
+  /* Hide verbose habits instruction text on mobile */
+  .hibi-habits-instructions {
+    display: none !important;
+  }
+
+  /* Calendar mood dots — bigger touch target via pseudo-element */
+  .hibi-mood-dot {
+    position: relative !important;
+  }
+  .hibi-mood-dot::after {
+    content: '';
+    position: absolute;
+    inset: -10px;
   }
 
   /* Calendar page — hide redundant mini calendar on mobile */
