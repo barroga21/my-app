@@ -317,7 +317,13 @@ export default function CalendarPage() {
 
   function setMood(moodKey) {
     if (!selectedDate) return;
-    const nextMoods = { ...moodByDate, [selectedDate]: moodKey };
+    const current = moodByDate[selectedDate];
+    const nextMoods = { ...moodByDate };
+    if (current === moodKey) {
+      delete nextMoods[selectedDate];
+    } else {
+      nextMoods[selectedDate] = moodKey;
+    }
     setMoodByDate(nextMoods);
     persistRitual(todosByDate, nextMoods, reflectionByDate, photosByDate);
   }
