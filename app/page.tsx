@@ -37,8 +37,10 @@ export default function HomePage() {
   const [wordsThisMonth, setWordsThisMonth] = useState(0);
   const [refreshTick, setRefreshTick] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [nightModePref, setNightModePref] = useState(NIGHT_MODE_OPTIONS.AUTO);
   const pullStartY = useRef(0);
   const pullActive = useRef(false);
+  const pullTriggered = useRef(false);
 
   const now = new Date();
   const year = now.getFullYear();
@@ -59,6 +61,13 @@ export default function HomePage() {
     const index = seed % gentlePresences.length;
     setMessage(gentlePresences[index]);
   }, [seed]);
+
+  useEffect(() => {
+    const syncPref = () => setNightModePref(getStoredNightModePreference());
+    syncPref();
+    window.addEventListener("storage", syncPref);
+    return () => window.removeEventListener("storage", syncPref);
+  }, []);
 
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
@@ -207,6 +216,7 @@ export default function HomePage() {
       : cur === NIGHT_MODE_OPTIONS.OFF ? NIGHT_MODE_OPTIONS.AUTO
       : NIGHT_MODE_OPTIONS.ON;
     setStoredNightModePreference(next);
+    setNightModePref(next);
     try { window.dispatchEvent(new Event("storage")); } catch {}
   }
 
@@ -215,22 +225,26 @@ export default function HomePage() {
     if (window.scrollY === 0) {
       pullStartY.current = e.touches[0].clientY;
       pullActive.current = true;
+      pullTriggered.current = false;
     }
   }
   function handleTouchMove(e: TouchEvent<HTMLDivElement>) {
     if (!pullActive.current) return;
-    if (e.touches[0].clientY - pullStartY.current > 80) {
+    if (!pullTriggered.current && e.touches[0].clientY - pullStartY.current > 80) {
       setRefreshing(true);
+      pullTriggered.current = true;
+      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(18);
     }
   }
   function handleTouchEnd() {
-    if (refreshing) {
+    if (pullTriggered.current) {
       setTimeout(() => {
         setRefreshTick((t) => t + 1);
         setRefreshing(false);
       }, 600);
     }
     pullActive.current = false;
+    pullTriggered.current = false;
   }
   useEffect(() => {
     if (!userId) return;
@@ -511,7 +525,7 @@ export default function HomePage() {
             }}
             title="Toggle day/night mode (cycles On, Off, Auto)"
           >
-            Theme
+            Theme: {nightModePref === NIGHT_MODE_OPTIONS.ON ? "On" : nightModePref === NIGHT_MODE_OPTIONS.OFF ? "Off" : "Auto"}
           </button>
         </div>
       </div>

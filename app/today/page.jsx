@@ -370,7 +370,8 @@ export default function JournalPage() {
     delete entrySwipeStartRef.current[entryId];
     const dx = t.clientX - start.x;
     const dy = Math.abs(t.clientY - start.y);
-    if (dx < -70 && dy < 36) {
+    if (dx < -90 && dy < 24) {
+      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(16);
       deleteEntryById(entryId);
     }
   }
@@ -1285,6 +1286,7 @@ export default function JournalPage() {
                         gap: 1,
                         animation: "hibiSlideRight 0.24s ease both",
                         animationDelay: `${Math.min(idx * 35, 220)}ms`,
+                        touchAction: "pan-y",
                       }}
                     >
                       <span style={{ fontSize: 10, fontWeight: 700, opacity: 0.6 }}>#{entriesForSelectedDay.length - idx}{entry.starred ? " ★" : ""}{pinnedEntries.has(entry.id) ? " 📌" : ""}</span>

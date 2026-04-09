@@ -481,3 +481,10 @@ button, a {
     display: none !important;
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .hibi-pull-indicator,
+  .hibi-journal-timeline-list > button {
+    animation: none !important;
+  }
+}

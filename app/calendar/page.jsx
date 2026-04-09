@@ -678,10 +678,14 @@ export default function CalendarPage() {
                   onMouseEnter={(e) => {
                     const notePreview = notes[date] ? String(notes[date]).slice(0, 120) : "No note yet";
                     const moodLabel = (journalMoodByDate[date] || mood.key || "gentle");
-                    setHoverPreview({ x: e.clientX, y: e.clientY, text: `${date} · Mood: ${moodLabel} · Habits: ${doneCount}/${totalHabits || 0} · ${notePreview}` });
+                    const x = Math.min(e.clientX, window.innerWidth - 260);
+                    const y = Math.min(e.clientY, window.innerHeight - 80);
+                    setHoverPreview({ x, y, text: `${date} · Mood: ${moodLabel} · Habits: ${doneCount}/${totalHabits || 0} · ${notePreview}` });
                   }}
                   onMouseMove={(e) => {
-                    setHoverPreview((prev) => prev ? { ...prev, x: e.clientX, y: e.clientY } : prev);
+                    const x = Math.min(e.clientX, window.innerWidth - 260);
+                    const y = Math.min(e.clientY, window.innerHeight - 80);
+                    setHoverPreview((prev) => prev ? { ...prev, x, y } : prev);
                   }}
                   onMouseLeave={() => setHoverPreview(null)}
                   className="hibi-cal-day-btn"

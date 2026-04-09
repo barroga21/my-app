@@ -845,7 +845,7 @@ export default function HabitTracker() {
     const dx = t.clientX - start.x;
     const dy = Math.abs(t.clientY - start.y);
     delete habitSwipeStartRef.current[habit];
-    if (dx < -70 && dy < 36 && editingHabit !== habit) {
+    if (dx < -90 && dy < 24 && editingHabit !== habit) {
       removeHabit(habit);
     }
   }
