@@ -1365,7 +1365,7 @@ export default function HabitTracker() {
             style={{
               border: `1.5px solid ${nightMode ? "#4ade80" : "#1a6e36"}`,
               background: nightMode ? "rgba(74,222,128,0.10)" : "rgba(26,110,54,0.08)",
-              color: nightMode ? "#4ade80" : "#1a6e36",
+              color: nightMode ? "#dde3ea" : "#0d2a14",
               borderRadius: 999,
               fontSize: 13,
               fontWeight: 700,
