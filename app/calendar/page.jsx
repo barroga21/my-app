@@ -656,6 +656,7 @@ export default function CalendarPage() {
                   key={date}
                   onClick={() => openDay(day)}
                   title={notes[date] ? String(notes[date]).slice(0, 80) : undefined}
+                  className="hibi-cal-day-btn"
                   style={{
                     aspectRatio: "1 / 1",
                     width: "100%",
@@ -670,12 +671,13 @@ export default function CalendarPage() {
                     display: "flex",
                     flexDirection: "column",
                     justifyContent: "space-between",
+                    alignItems: "center",
                     padding: 8,
                     position: "relative",
                     transition: "all 0.2s ease",
                   }}
                 >
-                  <span style={{ fontSize: 18, fontWeight: 700, lineHeight: 1 }}>{day}</span>
+                  <span className="hibi-cal-day-num" style={{ fontSize: 18, fontWeight: 700, lineHeight: 1 }}>{day}</span>
                   {thumb ? (
                     <img
                       src={thumb}
@@ -690,7 +692,7 @@ export default function CalendarPage() {
                     />
                   ) : null}
 
-                  <span style={{ width: 22, height: 22, display: "grid", placeItems: "center", margin: "4px auto 0" }}>
+                  <span className="hibi-cal-day-ring" style={{ width: 22, height: 22, display: "grid", placeItems: "center", margin: "4px auto 0" }}>
                     <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
                       <circle cx="9" cy="9" r="8" fill={mood.color} stroke={nightMode ? "#3a4350" : "#d6e5d6"} strokeWidth="1.5" />
                       <circle
@@ -810,33 +812,48 @@ export default function CalendarPage() {
               <p style={{ margin: "6px 0 0", color: nightMode ? "#b6bdc7" : "#2e7d32", fontSize: 14 }}>{getPromptForDate(selectedDate)}</p>
             </div>
 
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               {MOODS.map((m) => (
                 <button
                   key={m.key}
                   onClick={() => setMood(m.key)}
                   className="hibi-mood-dot"
                   style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: "4px 6px",
+                    borderRadius: 8,
+                    outline: (selectedDate && moodByDate[selectedDate] === m.key) ? `2px solid ${calendarTheme.heading}` : "none",
+                    outlineOffset: 2,
+                  }}
+                  title={m.label}
+                >
+                  <span style={{
                     width: 18,
                     height: 18,
                     borderRadius: "50%",
-                    border: (selectedDate && moodByDate[selectedDate] === m.key) ? `2px solid ${calendarTheme.heading}` : `1px solid ${nightMode ? "#39424d" : "#b7c9b7"}`,
                     background: m.color,
-                    cursor: "pointer",
-                  }}
-                  title={m.label}
-                />
+                    border: (selectedDate && moodByDate[selectedDate] === m.key) ? `2px solid ${calendarTheme.heading}` : `1px solid ${nightMode ? "#39424d" : "#b7c9b7"}`,
+                    display: "block",
+                    flexShrink: 0,
+                  }} />
+                  <span style={{ fontSize: 12, fontWeight: (selectedDate && moodByDate[selectedDate] === m.key) ? 700 : 500, color: calendarTheme.body }}>{m.label}</span>
+                </button>
               ))}
             </div>
 
-            <form onSubmit={addTodo} style={{ display: "flex", gap: 8 }}>
+            <form onSubmit={addTodo} className="hibi-day-add-form" style={{ display: "flex", gap: 8, width: "100%" }}>
               <input
                 value={todoInput}
                 onChange={(e) => setTodoInput(e.target.value)}
                 placeholder="Add a tiny intention"
-                style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: `1px solid ${calendarTheme.inputBorder}`, background: calendarTheme.inputBg, color: calendarTheme.heading }}
+                style={{ flex: 1, minWidth: 0, padding: "8px 10px", borderRadius: 8, border: `1px solid ${calendarTheme.inputBorder}`, background: calendarTheme.inputBg, color: calendarTheme.heading, boxSizing: "border-box" }}
               />
-              <button type="submit" style={{ border: "none", background: nightMode ? "#2b3139" : "#2e7d32", color: "#fff", borderRadius: 8, padding: "8px 10px", fontWeight: 700, cursor: "pointer" }}>Add</button>
+              <button type="submit" style={{ border: "none", background: nightMode ? "#2b3139" : "#2e7d32", color: "#fff", borderRadius: 8, padding: "8px 14px", fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>Add</button>
             </form>
 
             <div style={{ display: "grid", gap: 6 }}>
@@ -852,12 +869,12 @@ export default function CalendarPage() {
               )}
             </div>
 
-            <div>
+            <div className="hibi-day-note-wrapper" style={{ minWidth: 0 }}>
               <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 placeholder="Write your day note..."
-                style={{ width: "100%", minHeight: 90, borderRadius: 8, border: `1px solid ${calendarTheme.inputBorder}`, padding: 10, resize: "vertical", fontFamily: "inherit", color: calendarTheme.heading, background: calendarTheme.inputBg }}
+                style={{ width: "100%", minHeight: 90, borderRadius: 8, border: `1px solid ${calendarTheme.inputBorder}`, padding: 10, resize: "vertical", fontFamily: "inherit", color: calendarTheme.heading, background: calendarTheme.inputBg, boxSizing: "border-box", display: "block" }}
               />
               <button onClick={saveNote} style={{ marginTop: 8, border: "none", background: nightMode ? "#2b3139" : "#2e7d32", color: "#fff", borderRadius: 8, padding: "8px 12px", fontWeight: 700, cursor: "pointer" }}>
                 Save Day Card
@@ -873,7 +890,7 @@ export default function CalendarPage() {
                 value={reflectionByDate[selectedDate] || ""}
                 onChange={(e) => setReflection(e.target.value)}
                 placeholder="Tiny reflection"
-                style={{ width: "100%", borderRadius: 8, border: `1px solid ${calendarTheme.inputBorder}`, padding: "9px 10px", color: calendarTheme.heading, background: calendarTheme.inputBg }}
+                style={{ width: "100%", boxSizing: "border-box", borderRadius: 8, border: `1px solid ${calendarTheme.inputBorder}`, padding: "9px 10px", color: calendarTheme.heading, background: calendarTheme.inputBg }}
               />
             </div>
 
