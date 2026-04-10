@@ -23,6 +23,7 @@ import NavBar from "@/app/components/NavBar";
 import { useScrollReveal } from "@/lib/hooks/useScrollReveal";
 import { checkReminders, scheduleLocalNotification } from "@/lib/repositories/notificationsRepo";
 import { exportAllDataAsJSON, exportAllDataAsMarkdown, downloadFile } from "@/lib/dataExport";
+import { downloadAvatar } from "@/lib/mediaStorage";
 
 const gentlePresences = [
   "Small steps still count. Your pace is enough today.",
@@ -131,6 +132,26 @@ export default function HomePage() {
     return () => window.clearInterval(id);
   }, [userId]);
 
+  // Pre-cache avatar from Supabase for cross-device sync
+  useEffect(() => {
+    if (!userId || !supabase) return;
+    const cached = localStorage.getItem(`hibi_avatar_${userId}`);
+    if (cached) return; // Already have a local avatar
+    downloadAvatar(userId).then(async (result) => {
+      if (!result?.url) return;
+      try {
+        const resp = await fetch(result.url);
+        if (!resp.ok) return;
+        const blob = await resp.blob();
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          try { localStorage.setItem(`hibi_avatar_${userId}`, reader.result as string); } catch {}
+        };
+        reader.readAsDataURL(blob);
+      } catch {}
+    });
+  }, [userId]);
+
   useEffect(() => {
     function deriveDisplayName(activeUser: { user_metadata?: Record<string, unknown>; email?: string } | null | undefined) {
       const rawName =
@@ -206,6 +227,8 @@ export default function HomePage() {
     const yr = year;
     const mo = month + 1;
       const dateKey = `${yr}-${String(mo).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+
+    async function loadHomeData() {
     try {
       const journalRaw = localStorage.getItem(journalYearKey(userId, yr));
       const journalData = journalRaw ? JSON.parse(journalRaw) : {};
@@ -232,11 +255,47 @@ export default function HomePage() {
     } catch {}
     try {
       const habitListRaw = localStorage.getItem(`habit_list_${userId}`);
-      const habitList: string[] = habitListRaw ? JSON.parse(habitListRaw) : [];
+      let habitList: string[] = habitListRaw ? JSON.parse(habitListRaw) : [];
+
+      // Cross-device sync: if localStorage has no habits, fetch from Supabase
+      if (habitList.length === 0 && supabase && userId) {
+        try {
+          const { data } = await supabase
+            .from("user_habits")
+            .select("habit_name,sort_order")
+            .eq("user_id", userId)
+            .order("sort_order", { ascending: true });
+          if (data && data.length > 0) {
+            habitList = data.map((r: { habit_name: string }) => r.habit_name).filter(Boolean);
+            localStorage.setItem(`habit_list_${userId}`, JSON.stringify(habitList));
+          }
+        } catch {}
+      }
+
       setTotalHabits(habitList.length);
       const habitsKey = habitChecksKey(userId, yr, mo - 1);
       const habitsRaw = localStorage.getItem(habitsKey);
       const habitsChecks: Record<string, string> = habitsRaw ? JSON.parse(habitsRaw) : {};
+
+      // Cross-device sync: if localStorage has no checks, fetch from Supabase
+      if (Object.keys(habitsChecks).length === 0 && supabase && userId) {
+        try {
+          const monthPrefix = `${yr}-${String(mo).padStart(2, "0")}`;
+          const { data } = await supabase
+            .from("habit_checks")
+            .select("habit,date,completed")
+            .eq("user_id", userId)
+            .like("date", `${monthPrefix}%`);
+          if (data) {
+            data.forEach((row: { habit: string; date: string; completed: boolean }) => {
+              const d = Number(String(row.date).split("-")[2]);
+              habitsChecks[`${row.habit}-${d}`] = row.completed ? "dot" : "fill";
+            });
+            localStorage.setItem(habitsKey, JSON.stringify(habitsChecks));
+          }
+        } catch {}
+      }
+
       let done = 0;
       habitList.forEach((habit) => {
         if (habitsChecks[`${habit}-${day}`] === "dot") done++;
@@ -245,6 +304,8 @@ export default function HomePage() {
       setQuickHabitList(habitList);
       setQuickChecked(habitsChecks);
     } catch {}
+    }
+    loadHomeData();
   }, [day, month, refreshTick, userId, year]);  // Night mode toggle
   function toggleNight() {
     const cur = getStoredNightModePreference();

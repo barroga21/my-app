@@ -296,32 +296,33 @@ export default function HabitTracker() {
 
     async function loadHabitList() {
       const localList = sanitizeStringArray(safeReadJSON(listKey, []));
+      const localDeduped = dedupeHabits(localList);
 
-      // Only show default habits for first-time users (no local or remote habits)
-      if (localList.length > 0) {
-        const deduped = dedupeHabits(localList);
-        setHabits(deduped);
-        // Persist deduplicated list so it doesn't reload with duplicates
-        if (deduped.length !== localList.length) {
-          safeWriteJSON(listKey, deduped);
+      // Show local habits immediately so UI isn't blank
+      if (localDeduped.length > 0) {
+        setHabits(localDeduped);
+        if (localDeduped.length !== localList.length) {
+          safeWriteJSON(listKey, localDeduped);
         }
-      } else if (!supabase || !userId) {
-        // If no Supabase or user, and no local habits, start empty
-        setHabits([]);
-        safeWriteJSON(listKey, []);
+      }
+
+      if (!supabase || !userId) {
+        if (localDeduped.length === 0) {
+          setHabits([]);
+          safeWriteJSON(listKey, []);
+        }
         return;
       }
 
+      // Always fetch from Supabase for cross-device sync
       const { data, error } = await supabase
         .from("user_habits")
         .select("habit_name,sort_order")
         .eq("user_id", userId)
         .order("sort_order", { ascending: true });
 
-
       if (error) {
-        // If error and no local habits, start empty (do not restore defaults after deletion)
-        if (localList.length === 0) {
+        if (localDeduped.length === 0) {
           setHabits([]);
           safeWriteJSON(listKey, []);
         }
@@ -329,10 +330,27 @@ export default function HabitTracker() {
       }
 
       const remoteList = dedupeHabits((data || []).map((row) => row.habit_name).filter(Boolean));
-      if (remoteList.length > 0) {
-        setHabits(remoteList);
-        safeWriteJSON(listKey, remoteList);
-      } else if (localList.length === 0) {
+
+      // Merge: union of remote + local, remote order takes priority
+      const mergedSet = new Set([...remoteList, ...localDeduped]);
+      const merged = [...remoteList, ...localDeduped.filter((h) => !remoteList.includes(h))];
+      const finalList = dedupeHabits(merged);
+
+      if (finalList.length > 0) {
+        setHabits(finalList);
+        safeWriteJSON(listKey, finalList);
+        // Push any local-only habits to Supabase so other devices can see them
+        const remoteSet = new Set(remoteList.map((h) => h.toLowerCase()));
+        const localOnly = localDeduped.filter((h) => !remoteSet.has(h.toLowerCase()));
+        if (localOnly.length > 0) {
+          const upsertRows = localOnly.map((name, i) => ({
+            user_id: userId,
+            habit_name: name,
+            sort_order: remoteList.length + i,
+          }));
+          await supabase.from("user_habits").upsert(upsertRows, { onConflict: "user_id,habit_name" });
+        }
+      } else if (localDeduped.length === 0) {
         setHabits([]);
         safeWriteJSON(listKey, []);
       }
@@ -581,7 +599,7 @@ export default function HabitTracker() {
       );
 
     if (error) {
-      showStatus("Updated.");
+      showStatus("Saved locally — sync pending.");
     }
   }
 
