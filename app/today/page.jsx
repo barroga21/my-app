@@ -1274,7 +1274,7 @@ export default function JournalPage() {
         color: theme.text,
         position: "relative",
         transition: "background 0.4s ease",
-        animation: "hibiFadeIn 0.35s ease",
+        animation: "hibiPageEnter 0.45s var(--hibi-ease-enter)",
       }}
     >
       {writeWithHibi ? (

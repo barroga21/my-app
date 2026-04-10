@@ -17,6 +17,7 @@ import {
   ensureOfflineStore,
   getSyncInspectorSnapshot,
 } from "@/lib/offline";
+import { useScrollReveal } from "@/lib/hooks/useScrollReveal";
 
 const CROP_CANVAS_W = 360;
 const CROP_CANVAS_H = 360;
@@ -41,6 +42,8 @@ export default function ProfilePage() {
   const [syncDiagnostics, setSyncDiagnostics] = useState({});
   const [offlineInspector, setOfflineInspector] = useState(null);
   const nightMode = isNightModeEnabled(nightModePreference, new Date(autoNightTimestamp));
+  const revealStats = useScrollReveal(0.2);
+  const revealActions = useScrollReveal(0.15);
 
   const [cropModalOpen, setCropModalOpen] = useState(false);
   const [rawImageSrc, setRawImageSrc] = useState("");
@@ -497,7 +500,7 @@ export default function ProfilePage() {
           : "linear-gradient(145deg, #f7fbf4 0%, #eef7e8 40%, #e0f0da 75%, #d4ead4 100%)",
         fontFamily: "var(--font-manrope), sans-serif",
         color: nightMode ? "#dde3ea" : "#0d2a14",
-        animation: "hibiFadeIn 0.35s ease",
+        animation: "hibiPageEnter 0.45s var(--hibi-ease-enter)",
       }}
     >
       <NavBar activePage="profile" />
@@ -566,6 +569,8 @@ export default function ProfilePage() {
               const next = e.target.value;
               setNightModePreference(next);
               setStoredNightModePreference(next);
+              document.body.classList.add("hibi-theme-transition");
+              setTimeout(() => document.body.classList.remove("hibi-theme-transition"), 500);
             }}
             style={{ padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${nightMode ? "rgba(255,255,255,0.12)" : "rgba(46,125,50,0.25)"}`, fontSize: 15, color: nightMode ? "#dde3ea" : "#0d2a14", background: nightMode ? "rgba(7,10,15,0.9)" : "rgba(255,255,255,0.95)" }}
           >
@@ -593,7 +598,7 @@ export default function ProfilePage() {
 
         <p style={{ minHeight: 22, margin: "10px 0 0", color: nightMode ? "#4ade80" : "#1a6e36", fontWeight: 500 }}>{status}</p>
 
-        <div style={{ marginTop: 20, borderTop: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, paddingTop: 16 }}>
+        <div ref={revealStats.ref} className={`hibi-reveal${revealStats.visible ? " hibi-revealed" : ""}`} style={{ marginTop: 20, borderTop: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, paddingTop: 16 }}>
           <p style={{ margin: "0 0 10px", fontWeight: 700, fontSize: 15, color: nightMode ? "#dde3ea" : "#0d2a14" }}>Studio Stats</p>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
             <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.06)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 12, padding: "10px 14px" }}>
@@ -710,6 +715,7 @@ export default function ProfilePage() {
             </div>
           </div>
 
+          <div ref={revealActions.ref} className={`hibi-reveal${revealActions.visible ? " hibi-revealed" : ""}`}>
           <button
             type="button"
             onClick={exportData}
@@ -764,6 +770,7 @@ export default function ProfilePage() {
               </div>
             </div>
           )}
+          </div>
         </div>
       </section>
 

@@ -1,3 +1,6 @@
+import { useAnimatedCounter } from "@/lib/hooks/useAnimatedCounter";
+import { useScrollReveal } from "@/lib/hooks/useScrollReveal";
+
 type StatCardProps = {
   label: string;
   value: string | number;
@@ -7,8 +10,14 @@ type StatCardProps = {
 };
 
 export default function StatCard({ label, value, suffix = "", nightMode, delay = "0ms" }: StatCardProps) {
+  const { ref, visible } = useScrollReveal(0.2);
+  const numericValue = typeof value === "number" ? value : NaN;
+  const animatedNum = useAnimatedCounter(isNaN(numericValue) ? 0 : numericValue, visible, 700);
+  const displayValue = isNaN(numericValue) ? value : animatedNum;
+
   return (
     <div
+      ref={ref}
       style={{
         background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)",
         border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`,
@@ -23,7 +32,7 @@ export default function StatCard({ label, value, suffix = "", nightMode, delay =
         {label}
       </p>
       <p style={{ margin: 0, color: nightMode ? "#e9ecef" : "#0d2a14", fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}>
-        {value}
+        {displayValue}
         {suffix ? <span style={{ fontSize: 14, fontWeight: 500, color: nightMode ? "#6a7a6a" : "#4a7a50" }}>{suffix}</span> : null}
       </p>
     </div>

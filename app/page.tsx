@@ -16,6 +16,7 @@ import {
 import OnboardingChecklist from "@/app/components/home/OnboardingChecklist";
 import StatCard from "@/app/components/home/StatCard";
 import NavBar from "@/app/components/NavBar";
+import { useScrollReveal } from "@/lib/hooks/useScrollReveal";
 
 const gentlePresences = [
   "Small steps still count. Your pace is enough today.",
@@ -48,6 +49,9 @@ export default function HomePage() {
   const pullStart = useRef({ x: 0, y: 0, at: 0 });
   const pullActive = useRef(false);
   const pullTriggered = useRef(false);
+  const revealOneThing = useScrollReveal(0.2);
+  const revealWeekly = useScrollReveal(0.15);
+  const revealMonthly = useScrollReveal(0.15);
 
   const [minuteTick, setMinuteTick] = useState(() => {
     const d = new Date();
@@ -218,6 +222,9 @@ export default function HomePage() {
       : NIGHT_MODE_OPTIONS.ON;
     setStoredNightModePreference(next);
     setNightModePref(next);
+    // Smooth theme crossfade
+    document.body.classList.add("hibi-theme-transition");
+    setTimeout(() => document.body.classList.remove("hibi-theme-transition"), 500);
     try { window.dispatchEvent(new Event("storage")); } catch {}
   }
 
@@ -475,7 +482,7 @@ export default function HomePage() {
           : "linear-gradient(145deg, #f7fbf4 0%, #eef7e8 40%, #e0f0da 75%, #d4ead4 100%)",
         fontFamily: "var(--font-manrope), sans-serif",
         color: nightMode ? "#e9ecef" : "#0d2a14",
-        animation: "hibiFadeIn var(--hibi-motion-normal) var(--hibi-ease-enter)",
+        animation: "hibiPageEnter var(--hibi-motion-slow) var(--hibi-ease-enter)",
       }}
     >
       {refreshing ? <div className="hibi-pull-indicator" aria-hidden="true" /> : null}
@@ -613,6 +620,8 @@ export default function HomePage() {
 
       {/* "One Thing" daily focus */}
       <section
+        ref={revealOneThing.ref}
+        className={`hibi-reveal${revealOneThing.visible ? " hibi-revealed" : ""}`}
         style={{
           width: "100%",
           maxWidth: 820,
@@ -682,6 +691,8 @@ export default function HomePage() {
 
       {isSundayEvening && weekStats && (
         <section
+          ref={revealWeekly.ref}
+          className={`hibi-reveal${revealWeekly.visible ? " hibi-revealed" : ""}`}
           style={{
             width: "100%",
             maxWidth: 820,
@@ -717,6 +728,8 @@ export default function HomePage() {
       {/* Monthly Review Card — shown on 1st of month */}
       {isFirstOfMonth && prevMonthStats && (
         <section
+          ref={revealMonthly.ref}
+          className={`hibi-reveal${revealMonthly.visible ? " hibi-revealed" : ""}`}
           style={{
             width: "100%",
             maxWidth: 820,

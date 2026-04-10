@@ -592,7 +592,7 @@ export default function CalendarPage() {
           ? "linear-gradient(145deg, #070b0d 0%, #0c1117 35%, #101820 70%, #0e1a14 100%)"
           : "linear-gradient(145deg, #f7fbf4 0%, #eef7e8 40%, #e0f0da 75%, #d4ead4 100%)",
         fontFamily: "var(--font-manrope), sans-serif",
-        animation: "hibiFadeIn 0.35s ease",
+        animation: "hibiPageEnter 0.45s var(--hibi-ease-enter)",
       }}
     >
       <div style={{ maxWidth: 1000, margin: "0 auto 24px" }}>

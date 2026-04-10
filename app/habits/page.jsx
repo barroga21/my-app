@@ -1142,7 +1142,7 @@ export default function HabitTracker() {
           : "linear-gradient(145deg, #f7fbf4 0%, #eef7e8 40%, #e0f0da 75%, #d4ead4 100%)",
         fontFamily: "var(--font-manrope), sans-serif",
         position: 'relative',
-        animation: "hibiFadeIn 0.35s ease",
+        animation: "hibiPageEnter 0.45s var(--hibi-ease-enter)",
       }}
     >
       <NavBar activePage="habits" />
