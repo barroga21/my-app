@@ -22,7 +22,7 @@ import OnboardingTour from "@/app/components/OnboardingTour";
 import NavBar from "@/app/components/NavBar";
 import { useScrollReveal } from "@/lib/hooks/useScrollReveal";
 import { checkReminders, scheduleLocalNotification } from "@/lib/repositories/notificationsRepo";
-import { exportAllDataAsJSON, exportAllDataAsMarkdown, downloadFile } from "@/lib/dataExport";
+
 import { downloadAvatar } from "@/lib/mediaStorage";
 
 const gentlePresences = [
@@ -949,62 +949,7 @@ export default function HomePage() {
         <QuickActions nightMode={nightMode} onOpenSearch={() => setGlobalSearchOpen(true)} todayJournalCount={todayJournalCount} userId={userId} />
       </section>
 
-      {/* Data Export */}
-      <section
-        style={{
-          width: "100%",
-          maxWidth: 820,
-          margin: "16px auto 0",
-          background: nightMode ? "rgba(12,16,22,0.82)" : "rgba(255,255,255,0.80)",
-          backdropFilter: "blur(20px)",
-          WebkitBackdropFilter: "blur(20px)",
-          border: `1px solid ${nightMode ? "rgba(255,255,255,0.06)" : "rgba(46,125,50,0.11)"}`,
-          borderRadius: 24,
-          boxShadow: nightMode ? "0 8px 40px rgba(0,0,0,0.55)" : "0 8px 40px rgba(46,125,50,0.10)",
-          padding: "20px 28px",
-        }}
-      >
-        <p style={{ margin: "0 0 4px", color: nightMode ? "#6a7a6a" : "#4a7a50", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>📦 Your Data</p>
-        <p style={{ margin: "0 0 12px", color: nightMode ? "#8a9e8a" : "#4a7a50", fontSize: 13 }}>Export everything — your data belongs to you.</p>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button
-            onClick={() => {
-              const data = exportAllDataAsJSON(userId);
-              if (data) downloadFile(JSON.stringify(data, null, 2), `hibi-export-${new Date().toISOString().slice(0, 10)}.json`);
-            }}
-            style={{
-              border: `1px solid ${nightMode ? "rgba(255,255,255,0.12)" : "rgba(46,125,50,0.22)"}`,
-              background: nightMode ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.75)",
-              color: nightMode ? "#d9e3ee" : "#14532d",
-              borderRadius: 999,
-              padding: "8px 16px",
-              fontSize: 13,
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            Export JSON
-          </button>
-          <button
-            onClick={() => {
-              const md = exportAllDataAsMarkdown(userId);
-              if (md) downloadFile(md, `hibi-export-${new Date().toISOString().slice(0, 10)}.md`, "text/markdown");
-            }}
-            style={{
-              border: `1px solid ${nightMode ? "rgba(255,255,255,0.12)" : "rgba(46,125,50,0.22)"}`,
-              background: nightMode ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.75)",
-              color: nightMode ? "#d9e3ee" : "#14532d",
-              borderRadius: 999,
-              padding: "8px 16px",
-              fontSize: 13,
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            Export Markdown
-          </button>
-        </div>
-      </section>
+
 
       {/* Global Search Overlay */}
       <GlobalSearch userId={userId} nightMode={nightMode} open={globalSearchOpen} onClose={() => setGlobalSearchOpen(false)} />

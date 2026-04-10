@@ -19,6 +19,7 @@ import {
   getSyncInspectorSnapshot,
 } from "@/lib/offline";
 import { useScrollReveal } from "@/lib/hooks/useScrollReveal";
+import { exportAllDataAsJSON, exportAllDataAsMarkdown, downloadFile } from "@/lib/dataExport";
 
 const CROP_CANVAS_W = 360;
 const CROP_CANVAS_H = 360;
@@ -623,7 +624,7 @@ export default function ProfilePage() {
 
         <p style={{ minHeight: 22, margin: "10px 0 0", color: nightMode ? "#4ade80" : "#1a6e36", fontWeight: 500 }}>{status}</p>
 
-        <div ref={revealStats.ref} className={`hibi-reveal${revealStats.visible ? " hibi-revealed" : ""}`} style={{ marginTop: 20, borderTop: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, paddingTop: 16 }}>
+        <div style={{ marginTop: 20, borderTop: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, paddingTop: 16 }}>
           <p style={{ margin: "0 0 10px", fontWeight: 700, fontSize: 15, color: nightMode ? "#dde3ea" : "#0d2a14" }}>Studio Stats</p>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
             <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.06)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 12, padding: "10px 14px" }}>
@@ -740,14 +741,33 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          <div ref={revealActions.ref} className={`hibi-reveal${revealActions.visible ? " hibi-revealed" : ""}`}>
-          <button
-            type="button"
-            onClick={exportData}
-            style={{ width: "100%", marginBottom: 8, border: `1px solid ${nightMode ? "rgba(255,255,255,0.10)" : "rgba(46,125,50,0.20)"}`, background: "transparent", color: nightMode ? "#6a8a70" : "#4a7a50", borderRadius: 10, padding: "9px 12px", fontWeight: 700, cursor: "pointer", fontSize: 14 }}
-          >
-            Export My Data (JSON)
-          </button>
+          <div>
+          <div style={{ marginBottom: 12, borderTop: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, paddingTop: 14 }}>
+            <p style={{ margin: "0 0 4px", color: nightMode ? "#6a7a6a" : "#4a7a50", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>📦 Your Data</p>
+            <p style={{ margin: "0 0 10px", color: nightMode ? "#8a9e8a" : "#4a7a50", fontSize: 13 }}>Export everything — your data belongs to you.</p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const data = exportAllDataAsJSON(userId);
+                  if (data) downloadFile(JSON.stringify(data, null, 2), `hibi-export-${new Date().toISOString().slice(0, 10)}.json`);
+                }}
+                style={{ border: `1px solid ${nightMode ? "rgba(255,255,255,0.12)" : "rgba(46,125,50,0.22)"}`, background: nightMode ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.75)", color: nightMode ? "#d9e3ee" : "#14532d", borderRadius: 999, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+              >
+                Export JSON
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const md = exportAllDataAsMarkdown(userId);
+                  if (md) downloadFile(md, `hibi-export-${new Date().toISOString().slice(0, 10)}.md`, "text/markdown");
+                }}
+                style={{ border: `1px solid ${nightMode ? "rgba(255,255,255,0.12)" : "rgba(46,125,50,0.22)"}`, background: nightMode ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.75)", color: nightMode ? "#d9e3ee" : "#14532d", borderRadius: 999, padding: "8px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+              >
+                Export Markdown
+              </button>
+            </div>
+          </div>
 
           <button
             type="button"
