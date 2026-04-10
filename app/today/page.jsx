@@ -41,6 +41,7 @@ import { exportEntryAsMarkdown, copyToClipboard } from "@/lib/dataExport";
 import { useFocusTrap } from "@/lib/hooks/useFocusTrap";
 import { usePerformanceProbe } from "@/lib/hooks/usePerformanceProbe";
 import NavBar from "@/app/components/NavBar";
+import BreathingBackground from "@/app/components/BreathingBackground";
 import CommandPaletteDialog from "@/app/components/ui/CommandPaletteDialog";
 import LiveRegion from "@/app/components/ui/LiveRegion";
 import MobileActionBar from "@/app/components/ui/MobileActionBar";
@@ -169,7 +170,10 @@ export default function JournalPage() {
   const [pinnedFilter, setPinnedFilter] = useState(false);
 
   const [writeWithHibi, setWriteWithHibi] = useState(false);
-  const [nightModePreference, setNightModePreference] = useState(NIGHT_MODE_OPTIONS.AUTO);
+  const [nightModePreference, setNightModePreference] = useState(() => {
+    if (typeof window === "undefined") return NIGHT_MODE_OPTIONS.AUTO;
+    try { return getStoredNightModePreference(); } catch { return NIGHT_MODE_OPTIONS.AUTO; }
+  });
   const [autoNightTimestamp, setAutoNightTimestamp] = useState(Date.now());
 
   const [calendarPhotosByDate, setCalendarPhotosByDate] = useState({});
@@ -1281,10 +1285,13 @@ export default function JournalPage() {
         fontFamily: "var(--font-manrope), sans-serif",
         color: theme.text,
         position: "relative",
+        overflow: "hidden",
+        isolation: "isolate",
         transition: "background 0.4s ease",
         animation: "hibiPageEnter 0.45s var(--hibi-ease-enter)",
       }}
     >
+      <BreathingBackground nightMode={nightMode} />
       {writeWithHibi ? (
         <div
           style={{
@@ -1301,7 +1308,7 @@ export default function JournalPage() {
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 1140, margin: "0 auto 12px", zIndex: 2, position: "relative", gap: 12, flexWrap: "wrap" }}>
         <div>
-          <h1 className="hibi-brand-headline" style={{ margin: 0, fontSize: "clamp(30px, 5vw, 42px)", letterSpacing: -0.5, color: theme.text, fontWeight: 800 }}>Journal Studio</h1>
+          <h1 className="hibi-brand-headline" style={{ margin: 0, fontSize: "clamp(30px, 5vw, 42px)", letterSpacing: -0.5, color: theme.text, fontWeight: 800 }}>Journal</h1>
           <p style={{ margin: "4px 0 0", color: theme.muted, fontSize: 13 }}>Capture moments, shape meaning, and keep your rhythm in view.</p>
         </div>
 

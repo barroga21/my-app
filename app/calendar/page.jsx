@@ -18,6 +18,7 @@ import {
   writeCalendarRitual,
 } from "@/lib/repositories/calendarRepo";
 import NavBar from "@/app/components/NavBar";
+import BreathingBackground from "@/app/components/BreathingBackground";
 import CommandPaletteDialog from "@/app/components/ui/CommandPaletteDialog";
 import LiveRegion from "@/app/components/ui/LiveRegion";
 
@@ -588,6 +589,9 @@ export default function CalendarPage() {
       style={{
         padding: "28px 24px",
         minHeight: "100vh",
+        position: "relative",
+        overflow: "hidden",
+        isolation: "isolate",
         background: nightMode
           ? "linear-gradient(145deg, #070b0d 0%, #0c1117 35%, #101820 70%, #0e1a14 100%)"
           : "linear-gradient(145deg, #f7fbf4 0%, #eef7e8 40%, #e0f0da 75%, #d4ead4 100%)",
@@ -595,6 +599,7 @@ export default function CalendarPage() {
         animation: "hibiPageEnter 0.45s var(--hibi-ease-enter)",
       }}
     >
+      <BreathingBackground nightMode={nightMode} />
       <div style={{ maxWidth: 1000, margin: "0 auto 24px" }}>
         <NavBar activePage="calendar" />
       </div>
@@ -608,7 +613,7 @@ export default function CalendarPage() {
         <div style={{ flex: "1 1 670px", maxWidth: 720 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
             <div>
-              <h1 className="hibi-brand-headline" style={{ color: calendarTheme.heading, fontWeight: 800, fontSize: "clamp(28px, 5vw, 40px)", letterSpacing: -0.5, margin: 0 }}>Calendar Studio</h1>
+              <h1 className="hibi-brand-headline" style={{ color: calendarTheme.heading, fontWeight: 800, fontSize: "clamp(28px, 5vw, 40px)", letterSpacing: -0.5, margin: 0 }}>Calendar</h1>
               <p style={{ margin: "3px 0 0", color: calendarTheme.muted, fontSize: 13 }}>See your month as story, signal, and momentum.</p>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

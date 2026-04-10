@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import NavBar from "@/app/components/NavBar";
+import BreathingBackground from "@/app/components/BreathingBackground";
 import { supabase } from "@/lib/supabaseClient";
 import { uploadAvatar, downloadAvatar } from "@/lib/mediaStorage";
 import { useAuthBootstrap } from "@/lib/hooks/useAuthBootstrap";
@@ -32,7 +33,10 @@ export default function ProfilePage() {
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
   const [preferredName, setPreferredName] = useState("");
-  const [nightModePreference, setNightModePreference] = useState(NIGHT_MODE_OPTIONS.AUTO);
+  const [nightModePreference, setNightModePreference] = useState(() => {
+    if (typeof window === "undefined") return NIGHT_MODE_OPTIONS.AUTO;
+    try { return getStoredNightModePreference(); } catch { return NIGHT_MODE_OPTIONS.AUTO; }
+  });
   const [autoNightTimestamp, setAutoNightTimestamp] = useState(Date.now());
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
@@ -521,6 +525,9 @@ export default function ProfilePage() {
       style={{
         minHeight: "100vh",
         padding: "28px 24px",
+        position: "relative",
+        overflow: "hidden",
+        isolation: "isolate",
         background: nightMode
           ? "linear-gradient(145deg, #070b0d 0%, #0c1117 35%, #101820 70%, #0e1a14 100%)"
           : "linear-gradient(145deg, #f7fbf4 0%, #eef7e8 40%, #e0f0da 75%, #d4ead4 100%)",
@@ -529,6 +536,7 @@ export default function ProfilePage() {
         animation: "hibiPageEnter 0.45s var(--hibi-ease-enter)",
       }}
     >
+      <BreathingBackground nightMode={nightMode} />
       <NavBar activePage="profile" />
 
       <section

@@ -20,6 +20,7 @@ import MilestoneCelebration from "@/app/components/home/MilestoneCelebration";
 import GlobalSearch from "@/app/components/GlobalSearch";
 import OnboardingTour from "@/app/components/OnboardingTour";
 import NavBar from "@/app/components/NavBar";
+import BreathingBackground from "@/app/components/BreathingBackground";
 import { useScrollReveal } from "@/lib/hooks/useScrollReveal";
 import { checkReminders, scheduleLocalNotification } from "@/lib/repositories/notificationsRepo";
 
@@ -543,7 +544,7 @@ export default function HomePage() {
             Hibi
           </p>
           <h1 className="hibi-brand-headline hibi-shimmer-text" style={{ margin: "10px 0 8px", fontSize: "clamp(34px, 7vw, 56px)", lineHeight: 1.04, fontWeight: 800 }}>
-            Daily Studio
+            Daily Space
           </h1>
           <p style={{ margin: "12px auto 0", color: nightMode ? "#c9d1da" : "#1b5e20", maxWidth: 520, fontSize: "clamp(16px, 3vw, 20px)", lineHeight: 1.45 }}>
             Hibi greets you softly. Log in to shape your day with calm momentum and clear intent.
@@ -570,6 +571,9 @@ export default function HomePage() {
       style={{
         minHeight: "100vh",
         padding: "28px 24px",
+        position: "relative",
+        overflow: "hidden",
+        isolation: "isolate",
         background: nightMode
           ? "linear-gradient(145deg, #070b0d 0%, #0c1117 35%, #101820 70%, #0e1a14 100%)"
           : "linear-gradient(145deg, #f7fbf4 0%, #eef7e8 40%, #e0f0da 75%, #d4ead4 100%)",
@@ -578,6 +582,7 @@ export default function HomePage() {
         animation: "hibiPageEnter var(--hibi-motion-slow) var(--hibi-ease-enter)",
       }}
     >
+      <BreathingBackground nightMode={nightMode} />
       {refreshing ? <div className="hibi-pull-indicator" aria-hidden="true" /> : null}
       {/* Streak protection nudge — after 9PM with incomplete habits */}
       {showStreakNudge && (
@@ -646,7 +651,7 @@ export default function HomePage() {
         }}
       >
         <p style={{ margin: 0, color: nightMode ? "#6a7a6a" : "#4a7a50", fontWeight: 600, letterSpacing: 0.8, fontSize: 12, textTransform: "uppercase" }}>{dateLabel}</p>
-        <h1 className="hibi-brand-headline" style={{ margin: "8px 0 6px", fontSize: "clamp(28px, 5.5vw, 44px)", lineHeight: 1.06, fontWeight: 800, letterSpacing: -0.5 }}>{possessiveName} Daily Studio</h1>
+        <h1 className="hibi-brand-headline" style={{ margin: "8px 0 6px", fontSize: "clamp(28px, 5.5vw, 44px)", lineHeight: 1.06, fontWeight: 800, letterSpacing: -0.5 }}>Daily Space</h1>
         <p style={{ margin: "0 0 20px", color: nightMode ? "#8a9e8a" : "#2e6e34", fontSize: 17, lineHeight: 1.5 }}>{message}</p>
 
         <div style={{ display: "grid", gap: 14 }}>
@@ -702,10 +707,10 @@ export default function HomePage() {
 
           <div className="hibi-home-cta-row" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <Link href="/habits" style={{ textDecoration: "none", background: nightMode ? "#22c55e" : "#1a6e36", color: "#fff", padding: "10px 20px", borderRadius: 999, fontWeight: 700, boxShadow: nightMode ? "0 2px 12px rgba(34,197,94,0.35)" : "0 2px 12px rgba(26,110,54,0.30)", fontSize: 14, animation: allHabitsDone ? "hibiPulseGreen var(--hibi-motion-slow) var(--hibi-ease-standard) infinite" : "none" }}>
-              Open Habit Studio →
+              Open Habit Tracker →
             </Link>
             <Link href="/today" style={{ textDecoration: "none", background: nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.09)", color: nightMode ? "#c9d1da" : "#1a5c1e", padding: "10px 20px", borderRadius: 999, fontWeight: 600, border: `1px solid ${nightMode ? "rgba(255,255,255,0.10)" : "rgba(46,125,50,0.18)"}`, fontSize: 14 }}>
-              Open Journal Studio
+              Open Journal
             </Link>
           </div>
         </div>

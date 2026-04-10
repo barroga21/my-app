@@ -6,6 +6,7 @@ import { useNightMode } from "@/lib/useNightMode";
 import { useAuthBootstrap } from "@/lib/hooks/useAuthBootstrap";
 import { computeWeeklyStats, computeMonthlyStats, computeMoodCorrelations } from "@/lib/repositories/reviewRepo";
 import NavBar from "@/app/components/NavBar";
+import BreathingBackground from "@/app/components/BreathingBackground";
 
 const MOOD_META = {
   warm:    { label: "Warm",    color: "#F4C7A1", emoji: "🌅" },
@@ -212,6 +213,9 @@ export default function ReviewPage() {
       style={{
         minHeight: "100vh",
         padding: "28px 24px 100px",
+        position: "relative",
+        overflow: "hidden",
+        isolation: "isolate",
         background: nightMode
           ? "linear-gradient(145deg, #070b0d 0%, #0c1117 35%, #101820 70%, #0e1a14 100%)"
           : "linear-gradient(145deg, #f7fbf4 0%, #eef7e8 40%, #e0f0da 75%, #d4ead4 100%)",
@@ -219,12 +223,13 @@ export default function ReviewPage() {
         color: nightMode ? "#e9ecef" : "#0d2a14",
       }}
     >
+      <BreathingBackground nightMode={nightMode} />
       <div style={{ maxWidth: 900, margin: "0 auto 28px" }}>
         <NavBar activePage="review" />
       </div>
 
       <section style={{ maxWidth: 820, margin: "0 auto" }}>
-        <h1 style={{ margin: "0 0 6px", fontSize: "clamp(28px, 5.5vw, 44px)", fontWeight: 800, lineHeight: 1.06, letterSpacing: -0.5 }}>Review</h1>
+        <h1 className="hibi-brand-headline" style={{ margin: "0 0 6px", fontSize: "clamp(28px, 5.5vw, 44px)", fontWeight: 800, lineHeight: 1.06, letterSpacing: -0.5 }}>Review</h1>
         <p style={{ margin: "0 0 20px", color: nightMode ? "#8a9e8a" : "#2e6e34", fontSize: 15 }}>
           Reflect on your patterns, celebrate progress, and set intentions.
         </p>

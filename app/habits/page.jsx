@@ -34,6 +34,7 @@ import {
 } from "@/lib/repositories/habitsRepo";
 import { HIBI_BREAKPOINT_MOBILE } from "@/lib/constants";
 import NavBar from "@/app/components/NavBar";
+import BreathingBackground from "@/app/components/BreathingBackground";
 import CommandPaletteDialog from "@/app/components/ui/CommandPaletteDialog";
 import LiveRegion from "@/app/components/ui/LiveRegion";
 
@@ -1217,9 +1218,12 @@ export default function HabitTracker() {
           : "linear-gradient(145deg, #f7fbf4 0%, #eef7e8 40%, #e0f0da 75%, #d4ead4 100%)",
         fontFamily: "var(--font-manrope), sans-serif",
         position: 'relative',
+        overflow: 'hidden',
+        isolation: 'isolate',
         animation: "hibiPageEnter 0.45s var(--hibi-ease-enter)",
       }}
     >
+      <BreathingBackground nightMode={nightMode} />
       <NavBar activePage="habits" />
       {/* Streak protection nudge — after 9PM with incomplete habits */}
       {now.getHours() >= 21 && ringDoneCount < habits.length && habits.length > 0 && (
@@ -1255,7 +1259,7 @@ export default function HabitTracker() {
           marginBottom: 4,
         }}
       >
-        Habit Studio
+        Habit Tracker
       </h1>
       <p style={{ margin: "0 0 10px", color: habitTheme.muted, fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
         Build tiny promises and keep them visible.

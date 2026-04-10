@@ -211,6 +211,25 @@ body {
   to   { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
 }
 
+/* ── Ambient breathing background ──────────────────────── */
+@keyframes breathPulse {
+  0%   { opacity: var(--breath-lo); filter: blur(var(--breath-blur-lo)); }
+  50%  { opacity: var(--breath-hi); filter: blur(var(--breath-blur-hi)); }
+  100% { opacity: var(--breath-lo); filter: blur(var(--breath-blur-lo)); }
+}
+@keyframes breathDrift {
+  0%   { transform: translate(0%, 0%) scale(1); }
+  25%  { transform: translate(2%, -1.5%) scale(1.03); }
+  50%  { transform: translate(-1%, 2%) scale(1.01); }
+  75%  { transform: translate(-2.5%, -0.5%) scale(1.04); }
+  100% { transform: translate(0%, 0%) scale(1); }
+}
+@keyframes breathHueShift {
+  0%   { filter: hue-rotate(0deg) blur(80px); }
+  50%  { filter: hue-rotate(12deg) blur(90px); }
+  100% { filter: hue-rotate(0deg) blur(80px); }
+}
+
 /* Scroll-reveal animation */
 .hibi-reveal {
   opacity: 0;
