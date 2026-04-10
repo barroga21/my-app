@@ -168,6 +168,24 @@ export default function LoginPage() {
           0%, 100% { opacity: 0.6; transform: scale(1); }
           50% { opacity: 1; transform: scale(1.15); }
         }
+        /* ── Ambient breath layers ─────────────────────────── */
+        @keyframes breathPulse {
+          0%   { opacity: var(--breath-lo); filter: blur(var(--breath-blur-lo)); }
+          50%  { opacity: var(--breath-hi); filter: blur(var(--breath-blur-hi)); }
+          100% { opacity: var(--breath-lo); filter: blur(var(--breath-blur-lo)); }
+        }
+        @keyframes breathDrift {
+          0%   { transform: translate(0%, 0%) scale(1); }
+          25%  { transform: translate(2%, -1.5%) scale(1.03); }
+          50%  { transform: translate(-1%, 2%) scale(1.01); }
+          75%  { transform: translate(-2.5%, -0.5%) scale(1.04); }
+          100% { transform: translate(0%, 0%) scale(1); }
+        }
+        @keyframes breathHueShift {
+          0%   { filter: hue-rotate(0deg) blur(80px); }
+          50%  { filter: hue-rotate(12deg) blur(90px); }
+          100% { filter: hue-rotate(0deg) blur(80px); }
+        }
         @keyframes loginCardIn {
           from { opacity: 0; transform: translateY(24px) scale(0.97); filter: blur(4px); }
           to   { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
@@ -247,7 +265,7 @@ export default function LoginPage() {
               borderRadius: "50%",
               background: `radial-gradient(circle, ${p.auroraA}, transparent 70%)`,
               filter: "blur(60px)",
-              animation: reducedMotion ? "none" : "loginFloat 18s ease-in-out infinite",
+              animation: reducedMotion ? "none" : "loginFloat 26s cubic-bezier(0.45,0.05,0.55,0.95) infinite",
             }}
           />
           <div
@@ -260,7 +278,7 @@ export default function LoginPage() {
               borderRadius: "50%",
               background: `radial-gradient(circle, ${p.auroraB}, transparent 70%)`,
               filter: "blur(50px)",
-              animation: reducedMotion ? "none" : "loginFloat 22s ease-in-out infinite reverse",
+              animation: reducedMotion ? "none" : "loginFloat 34s cubic-bezier(0.45,0.05,0.55,0.95) infinite reverse",
             }}
           />
           {/* Small decorative orb */}
@@ -274,9 +292,59 @@ export default function LoginPage() {
               borderRadius: "50%",
               background: `radial-gradient(circle, ${p.glowColor}, transparent 70%)`,
               filter: "blur(30px)",
-              animation: reducedMotion ? "none" : "loginOrb 6s ease-in-out infinite",
+              animation: reducedMotion ? "none" : "loginOrb 10s cubic-bezier(0.45,0.05,0.55,0.95) infinite",
             }}
           />
+
+          {/* ── Ambient breath layers ─────────────────────────── */}
+          {!reducedMotion && (
+            <>
+              {/* Primary breath — full-screen tint pulse */}
+              <div
+                style={{
+                  "--breath-lo": dark ? "0.04" : "0.06",
+                  "--breath-hi": dark ? "0.10" : "0.13",
+                  "--breath-blur-lo": "80px",
+                  "--breath-blur-hi": "100px",
+                  position: "absolute",
+                  inset: "-20%",
+                  borderRadius: "50%",
+                  background: dark
+                    ? "radial-gradient(ellipse at 40% 45%, rgba(90,174,126,0.22), rgba(46,125,50,0.06) 55%, transparent 80%)"
+                    : "radial-gradient(ellipse at 40% 45%, rgba(90,174,126,0.28), rgba(46,125,50,0.08) 55%, transparent 80%)",
+                  animation: "breathPulse 12s cubic-bezier(0.45,0.05,0.55,0.95) infinite, breathDrift 32s cubic-bezier(0.45,0.05,0.55,0.95) infinite",
+                }}
+              />
+              {/* Secondary breath — warm counter-drift */}
+              <div
+                style={{
+                  "--breath-lo": dark ? "0.03" : "0.05",
+                  "--breath-hi": dark ? "0.08" : "0.11",
+                  "--breath-blur-lo": "90px",
+                  "--breath-blur-hi": "110px",
+                  position: "absolute",
+                  inset: "-15%",
+                  borderRadius: "50%",
+                  background: dark
+                    ? "radial-gradient(ellipse at 65% 60%, rgba(224,143,109,0.15), rgba(180,120,80,0.04) 50%, transparent 78%)"
+                    : "radial-gradient(ellipse at 65% 60%, rgba(224,163,109,0.20), rgba(180,140,80,0.06) 50%, transparent 78%)",
+                  animation: "breathPulse 14s cubic-bezier(0.45,0.05,0.55,0.95) infinite -4s, breathDrift 38s cubic-bezier(0.45,0.05,0.55,0.95) infinite reverse",
+                }}
+              />
+              {/* Tertiary — subtle hue-shifting veil */}
+              <div
+                style={{
+                  position: "absolute",
+                  inset: "-10%",
+                  borderRadius: "40%",
+                  background: dark
+                    ? "radial-gradient(ellipse at 50% 40%, rgba(90,140,126,0.07), transparent 65%)"
+                    : "radial-gradient(ellipse at 50% 40%, rgba(90,160,126,0.10), transparent 65%)",
+                  animation: "breathHueShift 28s cubic-bezier(0.45,0.05,0.55,0.95) infinite",
+                }}
+              />
+            </>
+          )}
         </div>
 
         {/* ── Card ────────────────────────────────────────────── */}
