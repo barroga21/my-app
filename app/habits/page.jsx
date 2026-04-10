@@ -32,6 +32,7 @@ import {
   writeHabitNotes,
   writeVacationDays,
 } from "@/lib/repositories/habitsRepo";
+import { HIBI_BREAKPOINT_MOBILE } from "@/lib/constants";
 import NavBar from "@/app/components/NavBar";
 import CommandPaletteDialog from "@/app/components/ui/CommandPaletteDialog";
 import LiveRegion from "@/app/components/ui/LiveRegion";
@@ -58,7 +59,7 @@ export default function HabitTracker() {
   const [completionPulseKey, setCompletionPulseKey] = useState(null);
   const [completionCheckKey, setCompletionCheckKey] = useState(null);
   const [habitNotes, setHabitNotes] = useState({});
-  const [softFocusMode, setSoftFocusMode] = useState(() => typeof window !== "undefined" && window.innerWidth <= 768);
+  const [softFocusMode, setSoftFocusMode] = useState(() => typeof window !== "undefined" && window.innerWidth <= HIBI_BREAKPOINT_MOBILE);
   const [softFocusHabit, setSoftFocusHabit] = useState("");
   const [softFocusTransition, setSoftFocusTransition] = useState(false);
   const [softFocusCardKey, setSoftFocusCardKey] = useState(0);
@@ -70,7 +71,7 @@ export default function HabitTracker() {
   const [colorPickerPos, setColorPickerPos] = useState({ x: 0, y: 0 });
   const [vacationDays, setVacationDays] = useState(new Set());
   const [habitStatsPopover, setHabitStatsPopover] = useState(null);
-  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth <= 768);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth <= HIBI_BREAKPOINT_MOBILE);
   const [showHabitTips, setShowHabitTips] = useState(false);
   const [habitContextMenu, setHabitContextMenu] = useState({ open: false, x: 0, y: 0, habit: "" });
   const cellClickTimersRef = useRef({});
@@ -98,7 +99,7 @@ export default function HabitTracker() {
 
   useEffect(() => {
     function handleResize() {
-      setIsMobile(window.innerWidth <= 768);
+      setIsMobile(window.innerWidth <= HIBI_BREAKPOINT_MOBILE);
     }
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
@@ -146,6 +147,11 @@ export default function HabitTracker() {
     if (!color) delete next[habit];
     setHabitColors(next);
     writeLocalHabitColors(next, userId);
+    // Sync color to Supabase for cross-device access
+    if (supabase && userId) {
+      supabase.from("user_habits").update({ color: color || null })
+        .eq("user_id", userId).eq("habit_name", habit);
+    }
   }
 
   function writeLocalArchivedHabits(list, activeUserId) {
@@ -319,10 +325,25 @@ export default function HabitTracker() {
       }
     }
 
-    function loadAuxiliaryHabitData() {
+    async function loadAuxiliaryHabitData() {
       const archived = readArchivedHabits(userId);
       setArchivedHabits(archived);
-      setHabitColors(readLocalHabitColors(userId));
+      const localColors = readLocalHabitColors(userId);
+      setHabitColors(localColors);
+      // Sync colors from Supabase for cross-device access
+      if (supabase && userId) {
+        const { data } = await supabase.from("user_habits")
+          .select("habit_name,color").eq("user_id", userId);
+        if (data) {
+          const remoteColors = {};
+          data.forEach((row) => { if (row.color) remoteColors[row.habit_name] = row.color; });
+          if (Object.keys(remoteColors).length > 0) {
+            const merged = { ...localColors, ...remoteColors };
+            setHabitColors(merged);
+            writeLocalHabitColors(merged, userId);
+          }
+        }
+      }
     }
 
     loadHabitList();

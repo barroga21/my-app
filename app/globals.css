@@ -8,15 +8,42 @@
   --hibi-green-50:  #f0faf0;
   --hibi-green-100: #d8f0d8;
   --hibi-green-200: #b3deb3;
+  --hibi-green-300: #a5d6a7;
+  --hibi-green-400: #4ade80;
   --hibi-green-500: #2e7d32;
+  --hibi-green-600: #388e3c;
   --hibi-green-700: #1a5c1e;
+  --hibi-green-800: #15803d;
   --hibi-green-900: #0d2a14;
+  --hibi-green-bright: #22c55e;
   --hibi-cream:     #fdf8f0;
 
+  --hibi-radius-xs:  6px;
   --hibi-radius-sm:  8px;
   --hibi-radius-md:  14px;
   --hibi-radius-lg:  20px;
   --hibi-radius-xl:  28px;
+  --hibi-radius-pill: 999px;
+  --hibi-radius-circle: 50%;
+
+  /* Z-index scale */
+  --z-base:         1;
+  --z-sticky:       5;
+  --z-toolbar:      20;
+  --z-toast:        40;
+  --z-toast-error:  65;
+  --z-backdrop:     70;
+  --z-conflict:     75;
+  --z-command:      80;
+  --z-dropdown:     200;
+  --z-modal:        300;
+  --z-overlay:      1000;
+  --z-popover:      1200;
+  --z-tooltip:      1300;
+  --z-dragpreview:  9999;
+
+  /* Breakpoints (JS mirror: keep in sync with HIBI_BREAKPOINT_MOBILE) */
+  --hibi-bp-mobile: 768px;
 
   --hibi-shadow-sm:  0 1px 4px rgba(0,0,0,0.06), 0 2px 8px rgba(46,125,50,0.08);
   --hibi-shadow-md:  0 4px 16px rgba(0,0,0,0.08), 0 8px 28px rgba(46,125,50,0.10);

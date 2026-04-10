@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import NavBar from "@/app/components/NavBar";
 import { supabase } from "@/lib/supabaseClient";
+import { uploadAvatar, downloadAvatar } from "@/lib/mediaStorage";
 import { useAuthBootstrap } from "@/lib/hooks/useAuthBootstrap";
 import {
   getStoredNightModePreference,
@@ -159,9 +160,17 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!userId) return;
+    // Load avatar: try localStorage cache first, then sync from Supabase
+    const storedAvatar = localStorage.getItem(`hibi_avatar_${userId}`);
+    if (storedAvatar) setAvatarSrc(storedAvatar);
+    // Fetch remote avatar (may be newer if uploaded from another device)
+    downloadAvatar(userId).then((result) => {
+      if (result?.url) {
+        setAvatarSrc(result.url);
+        try { localStorage.setItem(`hibi_avatar_${userId}`, result.url); } catch {}
+      }
+    });
     try {
-      const storedAvatar = localStorage.getItem(`hibi_avatar_${userId}`);
-      if (storedAvatar) setAvatarSrc(storedAvatar);
       const habitListRaw = localStorage.getItem(`habit_list_${userId}`);
       const habitList = habitListRaw ? JSON.parse(habitListRaw) : [];
       let entryCount = 0;
@@ -359,6 +368,8 @@ export default function ProfilePage() {
     const dataUrl = outCanvas.toDataURL("image/jpeg", 0.9);
     setAvatarSrc(dataUrl);
     try { localStorage.setItem(`hibi_avatar_${userId}`, dataUrl); } catch {}
+    // Upload to Supabase so avatar syncs across devices
+    uploadAvatar(dataUrl, userId);
     setCropModalOpen(false);
     setRawImageSrc("");
     cropImgObjRef.current = null;

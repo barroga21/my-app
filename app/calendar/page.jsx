@@ -913,6 +913,7 @@ export default function CalendarPage() {
                     outlineOffset: 2,
                   }}
                   title={m.label}
+                  aria-label={`Set mood to ${m.label}`}
                 >
                   <span style={{
                     width: 18,

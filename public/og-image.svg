@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#070b0d"/>
+      <stop offset="50%" stop-color="#0d1a12"/>
+      <stop offset="100%" stop-color="#0a1510"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#22c55e" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#2e7d32" stop-opacity="0.15"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <circle cx="900" cy="300" r="260" fill="url(#glow)"/>
+  <circle cx="200" cy="500" r="180" fill="url(#glow)" opacity="0.4"/>
+  <text x="100" y="260" font-family="system-ui, -apple-system, sans-serif" font-size="96" font-weight="800" fill="#f0faf0" letter-spacing="-2">hibi</text>
+  <text x="100" y="340" font-family="system-ui, -apple-system, sans-serif" font-size="32" font-weight="500" fill="#a5d6a7" letter-spacing="0.5">Your daily journal, habit tracker &amp; planner</text>
+  <rect x="100" y="380" width="60" height="4" rx="2" fill="#22c55e"/>
+  <text x="100" y="430" font-family="system-ui, -apple-system, sans-serif" font-size="20" fill="#6b7f6b">Reflect · Track · Grow</text>
+</svg>

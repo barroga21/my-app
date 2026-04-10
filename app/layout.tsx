@@ -28,6 +28,7 @@ export const metadata: Metadata = {
     description: "Your daily journal, habit tracker, and planner",
     url: "https://hibi.app",
     type: "website",
+    images: [{ url: "/og-image.svg", width: 1200, height: 630, alt: "Hibi — Your daily journal, habit tracker & planner" }],
   },
   alternates: {
     canonical: "/",

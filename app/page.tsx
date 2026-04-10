@@ -406,16 +406,16 @@ export default function HomePage() {
           fontFamily: "var(--font-manrope), sans-serif",
         }}
       >
-        <div style={{ maxWidth: 820, margin: "0 auto", display: "grid", gap: 14, paddingTop: 60 }}>
-          <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 48, borderRadius: 999, maxWidth: 500, marginBottom: 8 }} />
-          <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 36, borderRadius: 12, maxWidth: 280 }} />
-          <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 22, borderRadius: 8, maxWidth: 420 }} />
+        <div style={{ maxWidth: 820, margin: "0 auto", display: "grid", gap: 14, paddingTop: 60 }} role="status" aria-label="Loading your dashboard">
+          <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 48, borderRadius: 999, maxWidth: 500, marginBottom: 8 }} aria-hidden="true" />
+          <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 36, borderRadius: 12, maxWidth: 280 }} aria-hidden="true" />
+          <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 22, borderRadius: 8, maxWidth: 420 }} aria-hidden="true" />
           <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr", marginTop: 8 }}>
-            <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 80, borderRadius: 16 }} />
-            <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 80, borderRadius: 16 }} />
+            <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 80, borderRadius: 16 }} aria-hidden="true" />
+            <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 80, borderRadius: 16 }} aria-hidden="true" />
           </div>
-          <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 60, borderRadius: 16 }} />
-          <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 100, borderRadius: 16 }} />
+          <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 60, borderRadius: 16 }} aria-hidden="true" />
+          <div className={nightMode ? "hibi-skeleton" : "hibi-skeleton-light"} style={{ height: 100, borderRadius: 16 }} aria-hidden="true" />
         </div>
       </main>
     );
