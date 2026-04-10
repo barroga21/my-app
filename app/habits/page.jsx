@@ -87,6 +87,7 @@ export default function HabitTracker() {
   const [habitCategories, setHabitCategories] = useState({});
   const [categoryFilter, setCategoryFilter] = useState(null);
   const [showCategoryPicker, setShowCategoryPicker] = useState(null);
+  const [syncStatus, setSyncStatus] = useState(""); // "", "syncing", "synced", "offline"
   const cellClickTimersRef = useRef({});
   const habitSwipeStartRef = useRef({});
   const setHabitCellStateRef = useRef(null);
@@ -311,21 +312,26 @@ export default function HabitTracker() {
           setHabits([]);
           safeWriteJSON(listKey, []);
         }
+        setSyncStatus("offline");
         return;
       }
 
       // Always fetch from Supabase for cross-device sync
+      setSyncStatus("syncing");
       const { data, error } = await supabase
         .from("user_habits")
         .select("habit_name,sort_order")
         .eq("user_id", userId)
         .order("sort_order", { ascending: true });
 
+      console.log("[Hibi] loadHabitList remote query:", error ? "ERR: " + error.message : "rows=" + (data || []).length, "local=" + localDeduped.length);
+
       if (error) {
         if (localDeduped.length === 0) {
           setHabits([]);
           safeWriteJSON(listKey, []);
         }
+        setSyncStatus("offline");
         return;
       }
 
@@ -354,6 +360,7 @@ export default function HabitTracker() {
         setHabits([]);
         safeWriteJSON(listKey, []);
       }
+      setSyncStatus("synced");
     }
 
     async function loadAuxiliaryHabitData() {
@@ -407,9 +414,12 @@ export default function HabitTracker() {
 
       if (error) {
         // Do not show Supabase error message to user
+        console.warn("[Hibi] loadChecks failed:", error.message);
+        setSyncStatus("offline");
         return;
       }
 
+      console.log("[Hibi] loadChecks remote:", (data || []).length, "rows");
       const map = { ...hydratedLocalMap };
       data?.forEach((row) => {
         const day = Number(String(row.date).split("-")[2]);
@@ -418,6 +428,7 @@ export default function HabitTracker() {
       setChecked(map);
       writeMonthHabitChecks(userId, viewYear, viewMonth, map);
       showStatus("Connected to Supabase.");
+      setSyncStatus("synced");
     }
     loadChecks();
   }, [viewMonth, viewYear, userId]);
@@ -509,7 +520,8 @@ export default function HabitTracker() {
         .eq("date", date);
 
       if (error) {
-        showStatus("Updated.");
+        console.warn("[Hibi] habit_checks delete failed:", error.message);
+        setSyncStatus("offline");
       }
       return;
     }
@@ -527,7 +539,8 @@ export default function HabitTracker() {
       );
 
     if (error) {
-      showStatus("Updated.");
+      console.warn("[Hibi] habit_checks upsert failed:", error.message);
+      setSyncStatus("offline");
     }
   }
 
@@ -598,8 +611,13 @@ export default function HabitTracker() {
         { onConflict: "user_id,habit_name" }
       );
 
+    console.log("[Hibi] addHabit upsert:", error ? "ERR: " + error.message : "OK", habitName);
+
     if (error) {
-      showStatus("Saved locally — sync pending.");
+      showStatus("Saved locally — cloud sync failed. Will retry next load.");
+      setSyncStatus("offline");
+    } else {
+      setSyncStatus("synced");
     }
   }
 
@@ -679,7 +697,8 @@ export default function HabitTracker() {
       .eq("habit_name", habitName);
 
     if (habitError) {
-      showStatus("Updated.");
+      console.warn("[Hibi] user_habits delete failed:", habitError.message);
+      setSyncStatus("offline");
     }
 
     await supabase
@@ -755,7 +774,8 @@ export default function HabitTracker() {
       .eq("habit_name", oldHabitName);
 
     if (habitsError) {
-      showStatus("Updated.");
+      console.warn("[Hibi] user_habits rename failed:", habitsError.message);
+      setSyncStatus("offline");
     }
 
     const { error: checksError } = await supabase
@@ -765,7 +785,8 @@ export default function HabitTracker() {
       .eq("habit", oldHabitName);
 
     if (checksError) {
-      showStatus("Updated.");
+      console.warn("[Hibi] habit_checks rename failed:", checksError.message);
+      setSyncStatus("offline");
     }
   }
 
@@ -1236,8 +1257,11 @@ export default function HabitTracker() {
       >
         Habit Studio
       </h1>
-      <p style={{ margin: "0 0 10px", color: habitTheme.muted, fontSize: 13 }}>
+      <p style={{ margin: "0 0 10px", color: habitTheme.muted, fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
         Build tiny promises and keep them visible.
+        {syncStatus === "syncing" && <span style={{ fontSize: 11, opacity: 0.7 }}>☁️ Syncing…</span>}
+        {syncStatus === "synced" && <span style={{ fontSize: 11, opacity: 0.6 }}>☁️ Synced</span>}
+        {syncStatus === "offline" && <span style={{ fontSize: 11, color: "#e57373" }}>⚠ Offline — using local data</span>}
       </p>
       <div
         style={{

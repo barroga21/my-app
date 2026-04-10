@@ -260,11 +260,12 @@ export default function HomePage() {
       // Cross-device sync: if localStorage has no habits, fetch from Supabase
       if (habitList.length === 0 && supabase && userId) {
         try {
-          const { data } = await supabase
+          const { data, error } = await supabase
             .from("user_habits")
             .select("habit_name,sort_order")
             .eq("user_id", userId)
             .order("sort_order", { ascending: true });
+          console.log("[Hibi] home sync habits:", error ? "ERR: " + error.message : "rows=" + (data || []).length);
           if (data && data.length > 0) {
             habitList = data.map((r: { habit_name: string }) => r.habit_name).filter(Boolean);
             localStorage.setItem(`habit_list_${userId}`, JSON.stringify(habitList));
