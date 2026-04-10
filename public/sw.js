@@ -1,4 +1,4 @@
-const CACHE_NAME = "hibi-app-shell-v2";
+const CACHE_NAME = "hibi-app-shell-v3";
 const APP_SHELL = [
   "/",
   "/habits",
@@ -6,6 +6,8 @@ const APP_SHELL = [
   "/calendar",
   "/profile",
   "/journal",
+  "/review",
+  "/tags",
   "/manifest.json",
   "/icon.svg",
   "/og-image.svg",
@@ -59,4 +61,48 @@ self.addEventListener("fetch", (event) => {
         .catch(() => cached);
     })
   );
+});
+
+// Push notification support
+self.addEventListener("push", (event) => {
+  let data = { title: "Hibi", body: "Time to check in with yourself." };
+  try {
+    if (event.data) data = event.data.json();
+  } catch {
+    // fallback to default
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title || "Hibi", {
+      body: data.body || "",
+      icon: "/icon.svg",
+      badge: "/icon.svg",
+      tag: data.tag || "hibi-notification",
+      data: { url: data.url || "/" },
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url || "/";
+  event.waitUntil(
+    self.clients.matchAll({ type: "window" }).then((clients) => {
+      const existing = clients.find((c) => c.url.includes(url));
+      if (existing) return existing.focus();
+      return self.clients.openWindow(url);
+    })
+  );
+});
+
+// Handle messages from the app (local notifications)
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "HIBI_SHOW_NOTIFICATION") {
+    self.registration.showNotification(event.data.title || "Hibi", {
+      body: event.data.body || "",
+      icon: "/icon.svg",
+      badge: "/icon.svg",
+      tag: event.data.tag || "hibi-local",
+      data: { url: "/" },
+    });
+  }
 });

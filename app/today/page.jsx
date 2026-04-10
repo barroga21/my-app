@@ -36,6 +36,8 @@ import {
   setJournalWordGoal,
   writeJournalYearMap,
 } from "@/lib/repositories/journalSettingsRepo";
+import { readCustomTemplates, writeCustomTemplates, addCustomTemplate, removeCustomTemplate } from "@/lib/repositories/templatesRepo";
+import { exportEntryAsMarkdown, copyToClipboard } from "@/lib/dataExport";
 import { useFocusTrap } from "@/lib/hooks/useFocusTrap";
 import { usePerformanceProbe } from "@/lib/hooks/usePerformanceProbe";
 import NavBar from "@/app/components/NavBar";
@@ -197,6 +199,10 @@ export default function JournalPage() {
   const [liveMessage, setLiveMessage] = useState("");
   const [entryContextMenu, setEntryContextMenu] = useState({ open: false, x: 0, y: 0, entryId: null });
   const [signedMediaMap, setSignedMediaMap] = useState({});
+  const [customTemplates, setCustomTemplates] = useState([]);
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState("");
+  const [shareStatus, setShareStatus] = useState("");
   const autoSaveTimerRef = useRef(null);
   const entrySwipeStartRef = useRef({});
   const resizingSidebarRef = useRef(false);
@@ -776,6 +782,8 @@ export default function JournalPage() {
     if (!hasSeenJournalTips(userId)) {
       setShowJournalTips(true);
     }
+    // Load custom templates
+    setCustomTemplates(readCustomTemplates(userId));
   }, [userId]);
 
   useEffect(() => {
@@ -1613,10 +1621,13 @@ export default function JournalPage() {
                     backdropFilter: "blur(16px)",
                     WebkitBackdropFilter: "blur(16px)",
                     zIndex: 20,
-                    minWidth: 200,
+                    minWidth: 220,
+                    maxHeight: 350,
+                    overflowY: "auto",
                     overflow: "hidden",
                   }}
                 >
+                  <p style={{ margin: 0, padding: "8px 14px 4px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6, color: theme.muted }}>Built-in</p>
                   {TEMPLATES.map((tpl) => (
                     <button
                       role="menuitem"
@@ -1643,6 +1654,85 @@ export default function JournalPage() {
                       {tpl.label}
                     </button>
                   ))}
+                  {customTemplates.length > 0 && (
+                    <>
+                      <p style={{ margin: 0, padding: "8px 14px 4px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6, color: theme.muted }}>Custom</p>
+                      {customTemplates.map((tpl, i) => (
+                        <div key={i} style={{ display: "flex", alignItems: "center", borderBottom: `1px solid ${theme.glassBorder}` }}>
+                          <button
+                            role="menuitem"
+                            onClick={() => {
+                              setDraftEntry((prev) => ({ ...prev, text: tpl.text }));
+                              setTemplatePickerOpen(false);
+                            }}
+                            style={{
+                              flex: 1,
+                              textAlign: "left",
+                              border: "none",
+                              background: "transparent",
+                              color: theme.text,
+                              padding: "10px 14px",
+                              fontSize: 13,
+                              fontWeight: 600,
+                              cursor: "pointer",
+                            }}
+                          >
+                            {tpl.label}
+                          </button>
+                          <button
+                            onClick={() => {
+                              removeCustomTemplate(userId, i);
+                              setCustomTemplates(readCustomTemplates(userId));
+                            }}
+                            style={{ border: "none", background: "transparent", color: nightMode ? "#fca5a5" : "#b91c1c", padding: "4px 10px", cursor: "pointer", fontSize: 12 }}
+                            title="Remove template"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                  <div style={{ borderTop: `1px solid ${theme.glassBorder}`, padding: "8px 14px" }}>
+                    {showSaveTemplate ? (
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <input
+                          value={newTemplateName}
+                          onChange={(e) => setNewTemplateName(e.target.value)}
+                          placeholder="Template name…"
+                          style={{ flex: 1, padding: "6px 8px", borderRadius: 6, border: `1px solid ${theme.border}`, background: theme.input, color: theme.text, fontSize: 12, outline: "none" }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && newTemplateName.trim() && draftEntry.text.trim()) {
+                              addCustomTemplate(userId, newTemplateName.trim(), draftEntry.text);
+                              setCustomTemplates(readCustomTemplates(userId));
+                              setNewTemplateName("");
+                              setShowSaveTemplate(false);
+                            }
+                          }}
+                        />
+                        <button
+                          onClick={() => {
+                            if (newTemplateName.trim() && draftEntry.text.trim()) {
+                              addCustomTemplate(userId, newTemplateName.trim(), draftEntry.text);
+                              setCustomTemplates(readCustomTemplates(userId));
+                              setNewTemplateName("");
+                              setShowSaveTemplate(false);
+                            }
+                          }}
+                          style={{ border: "none", background: nightMode ? "#22c55e" : "#2e7d32", color: "#fff", padding: "6px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                        >
+                          Save
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setShowSaveTemplate(true)}
+                        style={{ border: "none", background: "transparent", color: theme.muted, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 }}
+                      >
+                        + Save current as template
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -1976,6 +2066,28 @@ export default function JournalPage() {
               >
                 {saveFlash ? "✓ Saved" : "Save Entry"}
                 {unsavedChanges && !saveFlash ? <span style={{ position: "absolute", top: -4, right: -4, width: 8, height: 8, borderRadius: "50%", background: nightMode ? "#f5c842" : "#c8910a" }} /> : null}
+              </button>
+              {/* Share / Export entry */}
+              <button
+                onClick={async () => {
+                  const md = exportEntryAsMarkdown(draftEntry, dateKey(selectedDay));
+                  const ok = await copyToClipboard(md);
+                  setShareStatus(ok ? "Copied!" : "Failed");
+                  setTimeout(() => setShareStatus(""), 2000);
+                }}
+                title="Copy entry as Markdown"
+                style={{
+                  border: `1px solid ${theme.border}`,
+                  background: theme.input,
+                  color: theme.text,
+                  borderRadius: 8,
+                  padding: "8px 10px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontSize: 12,
+                }}
+              >
+                {shareStatus || "📋 Copy"}
               </button>
             </div>
           </div>

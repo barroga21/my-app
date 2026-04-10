@@ -37,6 +37,16 @@ import NavBar from "@/app/components/NavBar";
 import CommandPaletteDialog from "@/app/components/ui/CommandPaletteDialog";
 import LiveRegion from "@/app/components/ui/LiveRegion";
 
+const DEFAULT_CATEGORIES = ["Health", "Work", "Creative", "Mindfulness", "Social"];
+
+function readHabitCategories(userId) {
+  return safeReadJSON(`hibi_habit_categories_${userId || "guest"}`, {});
+}
+
+function writeHabitCategories(userId, map) {
+  safeWriteJSON(`hibi_habit_categories_${userId || "guest"}`, map || {});
+}
+
 function dedupeHabits(list) {
   return [...new Map(list.map((h) => [h.toLowerCase(), h])).values()];
 }
@@ -74,6 +84,9 @@ export default function HabitTracker() {
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth <= HIBI_BREAKPOINT_MOBILE);
   const [showHabitTips, setShowHabitTips] = useState(false);
   const [habitContextMenu, setHabitContextMenu] = useState({ open: false, x: 0, y: 0, habit: "" });
+  const [habitCategories, setHabitCategories] = useState({});
+  const [categoryFilter, setCategoryFilter] = useState(null);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(null);
   const cellClickTimersRef = useRef({});
   const habitSwipeStartRef = useRef({});
   const setHabitCellStateRef = useRef(null);
@@ -330,6 +343,8 @@ export default function HabitTracker() {
       setArchivedHabits(archived);
       const localColors = readLocalHabitColors(userId);
       setHabitColors(localColors);
+      const cats = readHabitCategories(userId);
+      setHabitCategories(cats);
       // Sync colors from Supabase for cross-device access
       if (supabase && userId) {
         const { data } = await supabase.from("user_habits")
@@ -1570,6 +1585,65 @@ export default function HabitTracker() {
       )}
 
       {!softFocusMode && (
+      <>
+      {/* Category filter pills */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10, maxWidth: 520 }}>
+        <button
+          onClick={() => setCategoryFilter(null)}
+          style={{
+            padding: "5px 12px",
+            borderRadius: 999,
+            border: "none",
+            background: !categoryFilter ? (nightMode ? "rgba(34,197,94,0.18)" : "rgba(46,125,50,0.14)") : "transparent",
+            color: !categoryFilter ? (nightMode ? "#4ade80" : "#14532d") : (nightMode ? "#6a7a6a" : "#4a7a50"),
+            fontWeight: !categoryFilter ? 700 : 500,
+            fontSize: 12,
+            cursor: "pointer",
+          }}
+        >
+          All
+        </button>
+        {DEFAULT_CATEGORIES.map((cat) => {
+          const count = habits.filter((h) => habitCategories[h] === cat).length;
+          if (count === 0 && categoryFilter !== cat) return null;
+          return (
+            <button
+              key={cat}
+              onClick={() => setCategoryFilter(categoryFilter === cat ? null : cat)}
+              style={{
+                padding: "5px 12px",
+                borderRadius: 999,
+                border: "none",
+                background: categoryFilter === cat ? (nightMode ? "rgba(34,197,94,0.18)" : "rgba(46,125,50,0.14)") : "transparent",
+                color: categoryFilter === cat ? (nightMode ? "#4ade80" : "#14532d") : (nightMode ? "#6a7a6a" : "#4a7a50"),
+                fontWeight: categoryFilter === cat ? 700 : 500,
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              {cat} ({count})
+            </button>
+          );
+        })}
+        {habits.filter((h) => !habitCategories[h]).length > 0 && (
+          <button
+            onClick={() => setCategoryFilter("uncategorized")}
+            style={{
+              padding: "5px 12px",
+              borderRadius: 999,
+              border: "none",
+              background: categoryFilter === "uncategorized" ? (nightMode ? "rgba(34,197,94,0.18)" : "rgba(46,125,50,0.14)") : "transparent",
+              color: categoryFilter === "uncategorized" ? (nightMode ? "#4ade80" : "#14532d") : (nightMode ? "#6a7a6a" : "#4a7a50"),
+              fontWeight: categoryFilter === "uncategorized" ? 700 : 500,
+              fontSize: 12,
+              cursor: "pointer",
+            }}
+          >
+            Uncategorized ({habits.filter((h) => !habitCategories[h]).length})
+          </button>
+        )}
+      </div>
+
       <form onSubmit={addHabit} style={{ display: "flex", gap: 8, marginBottom: 12, maxWidth: 520 }}>
         <input
           value={newHabit}
@@ -1601,6 +1675,7 @@ export default function HabitTracker() {
           Add Habit
         </button>
       </form>
+      </>
       )}
 
       {softFocusMode && (
@@ -1720,7 +1795,11 @@ export default function HabitTracker() {
                       </tr>
                     </thead>
                     <tbody>
-                      {habits.map((habit, habitIdx) => (
+                      {habits.filter((habit) => {
+                        if (!categoryFilter) return true;
+                        if (categoryFilter === "uncategorized") return !habitCategories[habit];
+                        return habitCategories[habit] === categoryFilter;
+                      }).map((habit, habitIdx) => (
                         <Draggable key={`${habit}-${habitIdx}`} draggableId={`${habit}-${habitIdx}`} index={habitIdx}>
                           {(provided, snapshot) => (
                             <tr
@@ -2284,6 +2363,26 @@ export default function HabitTracker() {
           >
             <button role="menuitem" aria-label="Rename habit" onClick={() => { setEditingHabit(habitContextMenu.habit); setEditingHabitValue(habitContextMenu.habit); setHabitContextMenu({ open: false, x: 0, y: 0, habit: "" }); }} style={{ border: "none", background: "transparent", color: habitTheme.heading, textAlign: "left", padding: "6px 8px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Rename</button>
             <button role="menuitem" aria-label="Archive habit" onClick={() => { archiveHabit(habitContextMenu.habit); setHabitContextMenu({ open: false, x: 0, y: 0, habit: "" }); }} style={{ border: "none", background: "transparent", color: habitTheme.heading, textAlign: "left", padding: "6px 8px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Archive</button>
+            <div style={{ borderTop: `1px solid ${habitTheme.border}`, margin: "2px 0" }} />
+            <p style={{ margin: 0, padding: "4px 8px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6, color: nightMode ? "#6a7a6a" : "#999" }}>Category</p>
+            {DEFAULT_CATEGORIES.map((cat) => (
+              <button
+                key={cat}
+                role="menuitem"
+                onClick={() => {
+                  const next = { ...habitCategories };
+                  if (next[habitContextMenu.habit] === cat) delete next[habitContextMenu.habit];
+                  else next[habitContextMenu.habit] = cat;
+                  setHabitCategories(next);
+                  writeHabitCategories(userId, next);
+                  setHabitContextMenu({ open: false, x: 0, y: 0, habit: "" });
+                }}
+                style={{ border: "none", background: "transparent", color: habitCategories[habitContextMenu.habit] === cat ? (nightMode ? "#4ade80" : "#14532d") : habitTheme.heading, textAlign: "left", padding: "4px 8px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: habitCategories[habitContextMenu.habit] === cat ? 700 : 500 }}
+              >
+                {habitCategories[habitContextMenu.habit] === cat ? "✓ " : ""}{cat}
+              </button>
+            ))}
+            <div style={{ borderTop: `1px solid ${habitTheme.border}`, margin: "2px 0" }} />
             <button role="menuitem" aria-label="Delete habit" onClick={() => { removeHabit(habitContextMenu.habit); setHabitContextMenu({ open: false, x: 0, y: 0, habit: "" }); }} style={{ border: "none", background: "transparent", color: nightMode ? "#fca5a5" : "#b91c1c", textAlign: "left", padding: "6px 8px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Delete</button>
           </div>
         </div>

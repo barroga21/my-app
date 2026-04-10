@@ -49,10 +49,20 @@ function ProfileIcon() {
   );
 }
 
+function ReviewIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+      <polyline points="22 2 22 8 16 8"/>
+    </svg>
+  );
+}
+
 const TOP_NAV = [
   { href: "/calendar", label: "Calendar", page: "calendar" },
   { href: "/habits",   label: "Habits",   page: "habits"   },
   { href: "/today",    label: "Journal",  page: "journal"  },
+  { href: "/review",   label: "Review",   page: "review"   },
   { href: "/profile",  label: "Profile",  page: "profile"  },
 ];
 
@@ -61,6 +71,7 @@ const BOTTOM_NAV = [
   { href: "/habits",   label: "Habits",   page: "habits",   Icon: HabitsIcon   },
   { href: "/today",    label: "Journal",  page: "journal",  Icon: JournalIcon  },
   { href: "/calendar", label: "Calendar", page: "calendar", Icon: CalendarIcon },
+  { href: "/review",   label: "Review",   page: "review",   Icon: ReviewIcon   },
   { href: "/profile",  label: "Profile",  page: "profile",  Icon: ProfileIcon  },
 ];
 

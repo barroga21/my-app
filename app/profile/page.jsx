@@ -164,10 +164,24 @@ export default function ProfilePage() {
     const storedAvatar = localStorage.getItem(`hibi_avatar_${userId}`);
     if (storedAvatar) setAvatarSrc(storedAvatar);
     // Fetch remote avatar (may be newer if uploaded from another device)
-    downloadAvatar(userId).then((result) => {
+    // Convert the signed URL to a local data URL so it never expires
+    downloadAvatar(userId).then(async (result) => {
       if (result?.url) {
-        setAvatarSrc(result.url);
-        try { localStorage.setItem(`hibi_avatar_${userId}`, result.url); } catch {}
+        try {
+          const resp = await fetch(result.url);
+          if (!resp.ok) throw new Error("fetch failed");
+          const blob = await resp.blob();
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const dataUrl = reader.result;
+            setAvatarSrc(dataUrl);
+            try { localStorage.setItem(`hibi_avatar_${userId}`, dataUrl); } catch {}
+          };
+          reader.readAsDataURL(blob);
+        } catch {
+          // If fetch fails (offline), keep using whatever localStorage had
+          if (!storedAvatar) setAvatarSrc(result.url);
+        }
       }
     });
     try {
