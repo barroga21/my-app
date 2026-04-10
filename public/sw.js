@@ -1,16 +1,14 @@
-const CACHE_NAME = "hibi-app-shell-v1";
+const CACHE_NAME = "hibi-app-shell-v2";
 const APP_SHELL = [
   "/",
   "/habits",
   "/today",
   "/calendar",
   "/profile",
+  "/journal",
   "/manifest.json",
-  "/next.svg",
-  "/vercel.svg",
-  "/window.svg",
-  "/globe.svg",
-  "/file.svg",
+  "/icon.svg",
+  "/og-image.svg",
 ];
 
 self.addEventListener("install", (event) => {
