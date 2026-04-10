@@ -1,15 +1,22 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import NavBar from "@/app/components/NavBar";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuthBootstrap } from "@/lib/hooks/useAuthBootstrap";
 import {
   getStoredNightModePreference,
   isNightModeEnabled,
   NIGHT_MODE_OPTIONS,
   setStoredNightModePreference,
 } from "@/lib/nightModePreference";
+import {
+  createOfflineSyncWorker,
+  ensureOfflineStore,
+  getSyncInspectorSnapshot,
+} from "@/lib/offline";
 
 const CROP_CANVAS_W = 360;
 const CROP_CANVAS_H = 360;
@@ -18,8 +25,7 @@ const CROP_RADIUS = 140;
 export default function ProfilePage() {
   const router = useRouter();
 
-  const [authReady, setAuthReady] = useState(false);
-  const [userId, setUserId] = useState(null);
+  const { authReady, userId, user } = useAuthBootstrap({ supabase, router, redirectTo: "/login" });
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
   const [preferredName, setPreferredName] = useState("");
@@ -30,6 +36,10 @@ export default function ProfilePage() {
   const [avatarSrc, setAvatarSrc] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [appStats, setAppStats] = useState({ habits: 0, entries: 0, totalWords: 0, completionRate: null });
+  const [perfProbeEnabled, setPerfProbeEnabled] = useState(false);
+  const [perfSamples, setPerfSamples] = useState([]);
+  const [syncDiagnostics, setSyncDiagnostics] = useState({});
+  const [offlineInspector, setOfflineInspector] = useState(null);
   const nightMode = isNightModeEnabled(nightModePreference, new Date(autoNightTimestamp));
 
   const [cropModalOpen, setCropModalOpen] = useState(false);
@@ -50,6 +60,63 @@ export default function ProfilePage() {
     setStatus(msg);
     statusTimerRef.current = setTimeout(() => setStatus(""), 3000);
   }
+
+  const readDiagnostics = useCallback(() => {
+    try {
+      const parsedSamples = JSON.parse(localStorage.getItem("hibi_perf_samples") || "[]");
+      setPerfSamples(Array.isArray(parsedSamples) ? parsedSamples.slice(-60).reverse() : []);
+      setPerfProbeEnabled(localStorage.getItem("hibi_perf_probe") === "1");
+
+      const nextStatuses = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key || !key.includes("_sync_status_")) continue;
+        try {
+          nextStatuses[key] = JSON.parse(localStorage.getItem(key) || "{}");
+        } catch {
+          nextStatuses[key] = { state: "malformed" };
+        }
+      }
+      setSyncDiagnostics(nextStatuses);
+
+      if (userId) {
+        ensureOfflineStore(userId);
+        setOfflineInspector(getSyncInspectorSnapshot(userId));
+      }
+    } catch {
+      setPerfSamples([]);
+      setSyncDiagnostics({});
+      setOfflineInspector(null);
+    }
+  }, [userId]);
+
+  function replayFailedSyncOps() {
+    if (!userId || !supabase) return;
+    const worker = createOfflineSyncWorker({ supabase, userId });
+    const replayedCount = worker.replayFailed({ force: true });
+    worker.resume();
+    readDiagnostics();
+    showStatus(replayedCount ? `Replayed ${replayedCount} failed sync operation(s).` : "No failed sync operations to replay.");
+  }
+
+  const perfSummaryByView = useMemo(() => {
+    const grouped = {};
+    perfSamples.forEach((sample) => {
+      const view = sample?.view || "unknown";
+      const renderMs = Number(sample?.renderMs) || 0;
+      if (!grouped[view]) grouped[view] = { total: 0, count: 0, max: 0 };
+      grouped[view].total += renderMs;
+      grouped[view].count += 1;
+      grouped[view].max = Math.max(grouped[view].max, renderMs);
+    });
+
+    return Object.entries(grouped).map(([view, stats]) => ({
+      view,
+      avg: stats.count ? Number((stats.total / stats.count).toFixed(2)) : 0,
+      max: Number(stats.max.toFixed(2)),
+      count: stats.count,
+    }));
+  }, [perfSamples]);
 
   useEffect(() => {
     setNightModePreference(getStoredNightModePreference());
@@ -76,47 +143,16 @@ export default function ProfilePage() {
   }, []);
 
   useEffect(() => {
-    let unsubscribe = null;
-
-    async function loadUser() {
-      if (!supabase) {
-        setAuthReady(true);
-        return;
-      }
-
-      const { data } = await supabase.auth.getUser();
-      const user = data?.user || null;
-      if (!user) {
-        router.replace("/login");
-        return;
-      }
-
-      setUserId(user.id);
-      setEmail(user.email || "");
-      setFullName(
-        user.user_metadata?.full_name ||
-          user.user_metadata?.display_name ||
-          user.user_metadata?.name ||
-          ""
-      );
-      setPreferredName(user.user_metadata?.preferred_name || "");
-      setAuthReady(true);
-
-      const { data: listener } = supabase.auth.onAuthStateChange((_, session) => {
-        if (!session?.user) {
-          router.replace("/login");
-          return;
-        }
-        setUserId(session.user.id);
-      });
-      unsubscribe = () => listener.subscription.unsubscribe();
-    }
-
-    loadUser();
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, [router]);
+    if (!user) return;
+    setEmail(user.email || "");
+    setFullName(
+      user.user_metadata?.full_name ||
+      user.user_metadata?.display_name ||
+      user.user_metadata?.name ||
+      ""
+    );
+    setPreferredName(user.user_metadata?.preferred_name || "");
+  }, [user]);
 
   useEffect(() => {
     if (!userId) return;
@@ -163,6 +199,26 @@ export default function ProfilePage() {
   }, [userId]);
 
   useEffect(() => {
+    readDiagnostics();
+
+    function onStorage() {
+      readDiagnostics();
+    }
+
+    function onPerfSample() {
+      readDiagnostics();
+    }
+
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("hibi:perf-sample", onPerfSample);
+
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("hibi:perf-sample", onPerfSample);
+    };
+  }, [readDiagnostics]);
+
+  useEffect(() => {
     if (!cropModalOpen || !rawImageSrc) return;
     const img = new Image();
     img.onload = () => {
@@ -178,7 +234,6 @@ export default function ProfilePage() {
       drawCropCanvas({ x: 0, y: 0 }, minZoom, img);
     };
     img.src = rawImageSrc;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cropModalOpen, rawImageSrc]);
 
   useEffect(() => {
@@ -413,6 +468,7 @@ export default function ProfilePage() {
   if (!authReady) {
     return (
       <main
+        className="hibi-aurora-bg"
         style={{
           minHeight: "100vh",
           display: "grid",
@@ -422,7 +478,7 @@ export default function ProfilePage() {
             ? "linear-gradient(145deg, #070b0d 0%, #0c1117 35%, #101820 70%, #0e1a14 100%)"
             : "linear-gradient(145deg, #f7fbf4 0%, #eef7e8 40%, #e0f0da 75%, #d4ead4 100%)",
           color: nightMode ? "#dde3ea" : "#0d2a14",
-          fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif",
+          fontFamily: "var(--font-manrope), sans-serif",
         }}
       >
         Loading profile...
@@ -432,13 +488,14 @@ export default function ProfilePage() {
 
   return (
     <main
+      className="hibi-aurora-bg"
       style={{
         minHeight: "100vh",
         padding: "28px 24px",
         background: nightMode
           ? "linear-gradient(145deg, #070b0d 0%, #0c1117 35%, #101820 70%, #0e1a14 100%)"
           : "linear-gradient(145deg, #f7fbf4 0%, #eef7e8 40%, #e0f0da 75%, #d4ead4 100%)",
-        fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif",
+        fontFamily: "var(--font-manrope), sans-serif",
         color: nightMode ? "#dde3ea" : "#0d2a14",
         animation: "hibiFadeIn 0.35s ease",
       }}
@@ -458,14 +515,14 @@ export default function ProfilePage() {
           padding: 28,
         }}
       >
-        <h1 style={{ margin: "0 0 8px", fontSize: "clamp(24px,5vw,32px)", fontWeight: 800, letterSpacing: -0.5, color: nightMode ? "#dde3ea" : "#0d2a14" }}>Edit Profile</h1>
-        <p style={{ margin: "0 0 16px", color: nightMode ? "#6a8a70" : "#4a7a50" }}>Update what Hibi calls you on your home page.</p>
+        <h1 className="hibi-brand-headline" style={{ margin: "0 0 8px", fontSize: "clamp(24px,5vw,32px)", fontWeight: 800, letterSpacing: -0.5, color: nightMode ? "#dde3ea" : "#0d2a14" }}>Profile Studio</h1>
+        <p style={{ margin: "0 0 16px", color: nightMode ? "#6a8a70" : "#4a7a50" }}>Shape your profile, preferences, and diagnostics.</p>
 
         <form onSubmit={saveProfile} style={{ display: "grid", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 6 }}>
             <div style={{ position: "relative", flexShrink: 0 }}>
               {avatarSrc ? (
-                <img src={avatarSrc} alt="Profile" style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover", border: `2px solid ${nightMode ? "#2b3139" : "#a5d6a7"}` }} />
+                <Image src={avatarSrc} alt="Profile" width={72} height={72} unoptimized style={{ borderRadius: "50%", objectFit: "cover", border: `2px solid ${nightMode ? "#2b3139" : "#a5d6a7"}` }} />
               ) : (
                 <div style={{ width: 72, height: 72, borderRadius: "50%", background: nightMode ? "#2b3139" : "#c8e6c9", display: "grid", placeItems: "center", fontSize: 28, color: nightMode ? "#9aa3af" : "#2e7d32", border: `2px solid ${nightMode ? "#39424d" : "#a5d6a7"}` }}>
                   {(preferredName || fullName || "?").charAt(0).toUpperCase()}
@@ -483,17 +540,17 @@ export default function ProfilePage() {
               )}
             </div>
           </div>
-          <label style={{ color: nightMode ? "#dde3ea" : "#0d2a14", fontWeight: 700 }}>Name</label>
+          <label style={{ color: nightMode ? "#dde3ea" : "#0d2a14", fontWeight: 700 }}>Full Name</label>
           <input
             type="text"
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
-            placeholder="Your full name"
+            placeholder="Enter your full name"
             required
             style={{ padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${nightMode ? "rgba(255,255,255,0.12)" : "rgba(46,125,50,0.25)"}`, fontSize: 15, color: nightMode ? "#dde3ea" : "#0d2a14", background: nightMode ? "rgba(7,10,15,0.9)" : "rgba(255,255,255,0.95)" }}
           />
 
-          <label style={{ color: nightMode ? "#dde3ea" : "#0d2a14", fontWeight: 700, marginTop: 4 }}>Preferred Name (optional)</label>
+          <label style={{ color: nightMode ? "#dde3ea" : "#0d2a14", fontWeight: 700, marginTop: 4 }}>Preferred Name</label>
           <input
             type="text"
             value={preferredName}
@@ -530,14 +587,14 @@ export default function ProfilePage() {
             disabled={saving}
             style={{ marginTop: 8, background: nightMode ? "rgba(34,197,94,0.20)" : "#1a6e36", color: nightMode ? "#4ade80" : "#fff", border: nightMode ? "1px solid rgba(34,197,94,0.30)" : "none", borderRadius: 999, fontWeight: 700, padding: "11px 14px", cursor: saving ? "not-allowed" : "pointer", fontSize: 15, boxShadow: nightMode ? "0 0 20px rgba(34,197,94,0.12)" : "0 4px 14px rgba(26,110,54,0.30)" }}
           >
-            {saving ? "Saving..." : "Save Profile"}
+            {saving ? "Saving..." : "Save Changes"}
           </button>
         </form>
 
         <p style={{ minHeight: 22, margin: "10px 0 0", color: nightMode ? "#4ade80" : "#1a6e36", fontWeight: 500 }}>{status}</p>
 
         <div style={{ marginTop: 20, borderTop: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, paddingTop: 16 }}>
-          <p style={{ margin: "0 0 10px", fontWeight: 700, fontSize: 15, color: nightMode ? "#dde3ea" : "#0d2a14" }}>Your Stats</p>
+          <p style={{ margin: "0 0 10px", fontWeight: 700, fontSize: 15, color: nightMode ? "#dde3ea" : "#0d2a14" }}>Studio Stats</p>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
             <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.06)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 12, padding: "10px 14px" }}>
               <p style={{ margin: 0, color: nightMode ? "#6a8a70" : "#4a7a50", fontSize: 12 }}>Habits tracked</p>
@@ -559,6 +616,100 @@ export default function ProfilePage() {
             </div>
           </div>
 
+          <div style={{ marginBottom: 16, border: `1px solid ${nightMode ? "rgba(255,255,255,0.08)" : "rgba(46,125,50,0.16)"}`, borderRadius: 12, padding: 12, background: nightMode ? "rgba(255,255,255,0.03)" : "rgba(255,255,255,0.7)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <p style={{ margin: 0, color: nightMode ? "#dde3ea" : "#0d2a14", fontWeight: 700, fontSize: 14 }}>Runtime Diagnostics</p>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, color: nightMode ? "#6a8a70" : "#4a7a50", fontSize: 12, fontWeight: 700 }}>
+                <input
+                  type="checkbox"
+                  checked={perfProbeEnabled}
+                  onChange={(e) => {
+                    const enabled = e.target.checked;
+                    localStorage.setItem("hibi_perf_probe", enabled ? "1" : "0");
+                    setPerfProbeEnabled(enabled);
+                    readDiagnostics();
+                  }}
+                />
+                Enable perf probe
+              </label>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={readDiagnostics}
+                style={{ border: `1px solid ${nightMode ? "rgba(255,255,255,0.10)" : "rgba(46,125,50,0.20)"}`, background: "transparent", color: nightMode ? "#6a8a70" : "#4a7a50", borderRadius: 8, padding: "6px 10px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}
+              >
+                Refresh Diagnostics
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.removeItem("hibi_perf_samples");
+                  readDiagnostics();
+                }}
+                style={{ border: `1px solid ${nightMode ? "rgba(255,255,255,0.10)" : "rgba(46,125,50,0.20)"}`, background: "transparent", color: nightMode ? "#6a8a70" : "#4a7a50", borderRadius: 8, padding: "6px 10px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}
+              >
+                Clear Perf Samples
+              </button>
+            </div>
+
+            <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+              <p style={{ margin: 0, fontSize: 12, color: nightMode ? "#6a8a70" : "#4a7a50", fontWeight: 700 }}>Performance Summary</p>
+              {perfSummaryByView.length ? (
+                <div style={{ display: "grid", gap: 6 }}>
+                  {perfSummaryByView.map((row) => (
+                    <div key={row.view} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", border: `1px solid ${nightMode ? "rgba(255,255,255,0.06)" : "rgba(46,125,50,0.10)"}`, borderRadius: 8, padding: "6px 8px" }}>
+                      <span style={{ color: nightMode ? "#dde3ea" : "#0d2a14", fontSize: 12, fontWeight: 700 }}>{row.view}</span>
+                      <span style={{ color: nightMode ? "#9aa3af" : "#4a7a50", fontSize: 11 }}>avg {row.avg}ms · max {row.max}ms · {row.count} samples</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ margin: 0, color: nightMode ? "#9aa3af" : "#64748b", fontSize: 12 }}>No performance samples yet.</p>
+              )}
+            </div>
+
+            <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
+              <p style={{ margin: 0, fontSize: 12, color: nightMode ? "#6a8a70" : "#4a7a50", fontWeight: 700 }}>Sync Status</p>
+              {Object.keys(syncDiagnostics).length ? (
+                Object.entries(syncDiagnostics).map(([key, value]) => (
+                  <div key={key} style={{ border: `1px solid ${nightMode ? "rgba(255,255,255,0.06)" : "rgba(46,125,50,0.10)"}`, borderRadius: 8, padding: "6px 8px", display: "grid", gap: 2 }}>
+                    <span style={{ color: nightMode ? "#9aa3af" : "#4a7a50", fontSize: 10 }}>{key}</span>
+                    <span style={{ color: nightMode ? "#dde3ea" : "#0d2a14", fontSize: 12, fontWeight: 700 }}>state: {value?.state || "unknown"} · pending: {Number(value?.pending) || 0}</span>
+                  </div>
+                ))
+              ) : (
+                <p style={{ margin: 0, color: nightMode ? "#9aa3af" : "#64748b", fontSize: 12 }}>No sync status snapshots yet.</p>
+              )}
+            </div>
+
+            <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
+              <p style={{ margin: 0, fontSize: 12, color: nightMode ? "#6a8a70" : "#4a7a50", fontWeight: 700 }}>Offline Sync Inspector</p>
+              {offlineInspector ? (
+                <>
+                  <div style={{ border: `1px solid ${nightMode ? "rgba(255,255,255,0.06)" : "rgba(46,125,50,0.10)"}`, borderRadius: 8, padding: "6px 8px", display: "grid", gap: 2 }}>
+                    <span style={{ color: nightMode ? "#dde3ea" : "#0d2a14", fontSize: 12, fontWeight: 700 }}>
+                      pending: {offlineInspector.pending} · schema v{offlineInspector.version} · worker: {offlineInspector.diagnostics?.lastWorkerState || "idle"}
+                    </span>
+                    <span style={{ color: nightMode ? "#9aa3af" : "#4a7a50", fontSize: 11 }}>
+                      history synced: {Number(offlineInspector.stateCounts?.synced) || 0} · conflicts: {Number(offlineInspector.stateCounts?.conflict) || 0}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={replayFailedSyncOps}
+                    style={{ justifySelf: "start", border: `1px solid ${nightMode ? "rgba(255,255,255,0.10)" : "rgba(46,125,50,0.20)"}`, background: "transparent", color: nightMode ? "#6a8a70" : "#4a7a50", borderRadius: 8, padding: "6px 10px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}
+                  >
+                    Replay Failed Ops
+                  </button>
+                </>
+              ) : (
+                <p style={{ margin: 0, color: nightMode ? "#9aa3af" : "#64748b", fontSize: 12 }}>Offline inspector has no snapshot yet.</p>
+              )}
+            </div>
+          </div>
+
           <button
             type="button"
             onClick={exportData}
@@ -574,6 +725,15 @@ export default function ProfilePage() {
           >
             Log Out
           </button>
+
+          <div style={{ display: "grid", gap: 6, marginBottom: 10 }}>
+            <a href="/support" style={{ color: nightMode ? "#6a8a70" : "#1a5c2a", fontSize: 13, fontWeight: 600, textDecoration: "underline" }}>
+              Support
+            </a>
+            <a href="/privacy" style={{ color: nightMode ? "#6a8a70" : "#1a5c2a", fontSize: 13, fontWeight: 600, textDecoration: "underline" }}>
+              Privacy Policy
+            </a>
+          </div>
 
           {!showDeleteConfirm ? (
             <button

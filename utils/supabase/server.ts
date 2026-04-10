@@ -7,7 +7,7 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 type Cookie = {
   name: string;
   value: string;
-  options?: Record<string, any>;
+  options?: Record<string, unknown>;
 };
 
 export const createClient = (cookieStore: Awaited<ReturnType<typeof cookies>>) => {

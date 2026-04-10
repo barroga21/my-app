@@ -4,8 +4,17 @@ import Link from "next/link";
 import { TouchEvent, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useNightMode } from "@/lib/useNightMode";
+import { useAuthBootstrap } from "@/lib/hooks/useAuthBootstrap";
 import { getStoredNightModePreference, setStoredNightModePreference, NIGHT_MODE_OPTIONS } from "@/lib/nightModePreference";
 import { INTERACTION_TUNING, shouldTriggerPullRefresh, triggerHaptic } from "@/lib/interactionTuning";
+import { habitChecksKey, journalYearKey } from "@/lib/dateKeys";
+import {
+  clearOneThing as clearOneThingRepo,
+  getOneThing as getOneThingRepo,
+  setOneThing as setOneThingRepo,
+} from "@/lib/repositories/homeOneThingRepo";
+import OnboardingChecklist from "@/app/components/home/OnboardingChecklist";
+import StatCard from "@/app/components/home/StatCard";
 import NavBar from "@/app/components/NavBar";
 
 const gentlePresences = [
@@ -15,13 +24,10 @@ const gentlePresences = [
   "Choose one kind action for yourself before everything else.",
 ];
 
-const hibiMoodGradient = "linear-gradient(90deg, #f59e0b 0%, #22c55e 50%, #16a34a 100%)";
-
 export default function HomePage() {
   const [message, setMessage] = useState(gentlePresences[0]);
-  const [authReady, setAuthReady] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("Your");
+  const { authReady, userId, user } = useAuthBootstrap({ supabase, allowGuest: true });
   const nightMode = useNightMode();
   const [moodPercent, setMoodPercent] = useState(50);
   const [rhythmLabel, setRhythmLabel] = useState("Steady");
@@ -43,9 +49,29 @@ export default function HomePage() {
   const pullActive = useRef(false);
   const pullTriggered = useRef(false);
 
-  const now = new Date();
+  const [minuteTick, setMinuteTick] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}-${d.getMinutes()}`;
+  });
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const d = new Date();
+      setMinuteTick(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.getHours()}-${d.getMinutes()}`);
+    }, 60 * 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const now = useMemo(() => {
+    const [year, month, day, hour, minute] = minuteTick.split("-").map(Number);
+    return new Date(year, month, day, hour, minute);
+  }, [minuteTick]);
+
   const year = now.getFullYear();
   const month = now.getMonth();
+  const day = now.getDate();
+  const hour = now.getHours();
+  const minute = now.getMinutes();
   const monthLabel = now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const dateLabel = now.toLocaleDateString("en-US", {
     weekday: "long",
@@ -55,8 +81,8 @@ export default function HomePage() {
   });
 
   const seed = useMemo(() => {
-    return now.getDate() + now.getMonth() + now.getFullYear() + now.getHours() + now.getMinutes();
-  }, [now]);
+    return day + month + year + hour + minute;
+  }, [day, hour, minute, month, year]);
 
   useEffect(() => {
     const index = seed % gentlePresences.length;
@@ -71,20 +97,18 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    let unsubscribe: (() => void) | null = null;
-
-    function deriveDisplayName(user: any) {
+    function deriveDisplayName(activeUser: { user_metadata?: Record<string, unknown>; email?: string } | null | undefined) {
       const rawName =
-        user?.user_metadata?.full_name ||
-        user?.user_metadata?.display_name ||
-        user?.user_metadata?.name ||
-        user?.user_metadata?.preferred_name ||
+        activeUser?.user_metadata?.full_name ||
+        activeUser?.user_metadata?.display_name ||
+        activeUser?.user_metadata?.name ||
+        activeUser?.user_metadata?.preferred_name ||
         "";
 
       const fromMetadata = String(rawName || "").trim();
       if (fromMetadata) return fromMetadata;
 
-      const email = String(user?.email || "").trim();
+      const email = String(activeUser?.email || "").trim();
       if (email.includes("@")) {
         const local = email.split("@")[0].replace(/[._-]+/g, " ").trim();
         if (local) {
@@ -99,34 +123,12 @@ export default function HomePage() {
       return "Your";
     }
 
-    async function loadUser() {
-      if (!supabase) {
-        setAuthReady(true);
-        return;
-      }
-
-      const { data } = await supabase.auth.getUser();
-      const currentUserId = data?.user?.id || null;
-      setUserId(currentUserId);
-      setDisplayName(currentUserId ? deriveDisplayName(data?.user) : "Your");
-      setAuthReady(true);
-
-      const { data: listener } = supabase.auth.onAuthStateChange((_, session) => {
-        setUserId(session?.user?.id || null);
-        setDisplayName(session?.user ? deriveDisplayName(session.user) : "Your");
-      });
-      unsubscribe = () => listener.subscription.unsubscribe();
-    }
-
-    loadUser();
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, []);
+    setDisplayName(userId ? deriveDisplayName(user) : "Your");
+  }, [user, userId]);
 
   useEffect(() => {
     const activeUser = userId || "guest";
-    const key = `habit_checks_${activeUser}_${year}_${String(month + 1).padStart(2, "0")}`;
+    const key = habitChecksKey(activeUser, year, month);
     let map = {};
 
     try {
@@ -144,7 +146,7 @@ export default function HomePage() {
       if (!Number.isNaN(day)) doneDays.add(day);
     });
 
-    const elapsed = now.getDate();
+    const elapsed = day;
     const doneCount = Array.from(doneDays).filter((day) => day <= elapsed).length;
     const percent = elapsed ? Math.max(8, Math.round((doneCount / elapsed) * 100)) : 50;
     setMoodPercent(Math.min(100, percent));
@@ -162,17 +164,15 @@ export default function HomePage() {
     if (percent >= 70) setRhythmLabel("Grounded");
     else if (percent >= 40) setRhythmLabel("Steady");
     else setRhythmLabel("Soft");
-  }, [userId, year, month, now]);
+  }, [day, month, userId, year]);
 
   useEffect(() => {
     if (!userId) return;
-    const today = new Date();
-    const yr = today.getFullYear();
-    const mo = today.getMonth() + 1;
-    const day = today.getDate();
-    const dateKey = `${yr}-${String(mo).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const yr = year;
+    const mo = month + 1;
+      const dateKey = `${yr}-${String(mo).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     try {
-      const journalRaw = localStorage.getItem(`hibi_journal_${userId}_${yr}_all`);
+      const journalRaw = localStorage.getItem(journalYearKey(userId, yr));
       const journalData = journalRaw ? JSON.parse(journalRaw) : {};
       const todayEntries = journalData[dateKey];
       setTodayJournalCount(Array.isArray(todayEntries) ? todayEntries.length : 0);
@@ -199,7 +199,7 @@ export default function HomePage() {
       const habitListRaw = localStorage.getItem(`habit_list_${userId}`);
       const habitList: string[] = habitListRaw ? JSON.parse(habitListRaw) : [];
       setTotalHabits(habitList.length);
-      const habitsKey = `habit_checks_${userId}_${yr}_${String(mo).padStart(2, "0")}`;
+      const habitsKey = habitChecksKey(userId, yr, mo - 1);
       const habitsRaw = localStorage.getItem(habitsKey);
       const habitsChecks: Record<string, string> = habitsRaw ? JSON.parse(habitsRaw) : {};
       let done = 0;
@@ -210,7 +210,7 @@ export default function HomePage() {
       setQuickHabitList(habitList);
       setQuickChecked(habitsChecks);
     } catch {}
-  }, [userId, refreshTick]);  // Night mode toggle
+  }, [day, month, refreshTick, userId, year]);  // Night mode toggle
   function toggleNight() {
     const cur = getStoredNightModePreference();
     const next = cur === NIGHT_MODE_OPTIONS.ON ? NIGHT_MODE_OPTIONS.OFF
@@ -249,10 +249,8 @@ export default function HomePage() {
   }
   useEffect(() => {
     if (!userId) return;
-    const today = new Date();
-    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
     try {
-      const raw = localStorage.getItem(`hibi_one_thing_${userId}_${todayKey}`);
+      const raw = getOneThingRepo(userId, new Date());
       if (raw) {
         setOneThing(raw);
         setOneThingSet(true);
@@ -268,10 +266,8 @@ export default function HomePage() {
   function commitOneThing() {
     const trimmed = oneThingInput.trim();
     if (!trimmed || !userId) return;
-    const today = new Date();
-    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
     try {
-      localStorage.setItem(`hibi_one_thing_${userId}_${todayKey}`, trimmed);
+      setOneThingRepo(userId, new Date(), trimmed);
     } catch {}
     setOneThing(trimmed);
     setOneThingSet(true);
@@ -279,10 +275,8 @@ export default function HomePage() {
 
   function clearOneThing() {
     if (!userId) return;
-    const today = new Date();
-    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
     try {
-      localStorage.removeItem(`hibi_one_thing_${userId}_${todayKey}`);
+      clearOneThingRepo(userId, new Date());
     } catch {}
     setOneThing("");
     setOneThingSet(false);
@@ -290,13 +284,13 @@ export default function HomePage() {
   }
 
   // Weekly summary card — shown on Sundays evening
-  const isSundayEvening = now.getDay() === 0 && now.getHours() >= 17;
+  const isSundayEvening = now.getDay() === 0 && hour >= 17;
   const weekStats = useMemo(() => {
     if (!userId || !isSundayEvening) return null;
     try {
       const jRaw = localStorage.getItem(`hibi_journal_${userId}_${year}_all`);
       const jData = jRaw ? JSON.parse(jRaw) : {};
-      const habitsKey = `habit_checks_${userId}_${year}_${String(month + 1).padStart(2, "0")}`;
+      const habitsKey = habitChecksKey(userId, year, month);
       const habitsRaw = localStorage.getItem(habitsKey);
       const habitsChecksData: Record<string, string> = habitsRaw ? JSON.parse(habitsRaw) : {};
       const habitListRaw = localStorage.getItem(`habit_list_${userId}`);
@@ -319,10 +313,10 @@ export default function HomePage() {
       }
       return { journalDays, habitDays, totalWordsWeek };
     } catch { return null; }
-  }, [userId, isSundayEvening, year, month]);
+  }, [userId, isSundayEvening, year, month, now]);
 
   // Monthly review (last month stats) — shown on 1st of month
-  const isFirstOfMonth = now.getDate() === 1;
+  const isFirstOfMonth = day === 1;
   const prevMonthLabel = useMemo(() => {
     const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
@@ -335,7 +329,7 @@ export default function HomePage() {
     try {
       const habitListRaw = localStorage.getItem(`habit_list_${userId}`);
       const habitList: string[] = habitListRaw ? JSON.parse(habitListRaw) : [];
-      const habitsKey = `habit_checks_${userId}_${prevYear}_${String(prev + 1).padStart(2, "0")}`;
+      const habitsKey = habitChecksKey(userId, prevYear, prev);
       const habitsRaw = localStorage.getItem(habitsKey);
       const habitsChecks: Record<string, string> = habitsRaw ? JSON.parse(habitsRaw) : {};
       let habitDoneDays = 0;
@@ -354,10 +348,10 @@ export default function HomePage() {
     } catch {
       return null;
     }
-  }, [userId, isFirstOfMonth]);
+  }, [userId, isFirstOfMonth, now]);
 
   // Streak protection nudge — show after 9 PM if habits incomplete
-  const showStreakNudge = now.getHours() >= 21 && todayHabitsDone < totalHabits && totalHabits > 0;
+  const showStreakNudge = hour >= 21 && todayHabitsDone < totalHabits && totalHabits > 0;
   const allHabitsDone = totalHabits > 0 && todayHabitsDone >= totalHabits;
 
   function toggleQuickHabit(habit: string) {    if (!userId) return;
@@ -366,7 +360,7 @@ export default function HomePage() {
     const yr = td.getFullYear();
     const mo = td.getMonth() + 1;
     const key = `${habit}-${day}`;
-    const storageKey = `habit_checks_${userId}_${yr}_${String(mo).padStart(2, "0")}`;
+    const storageKey = habitChecksKey(userId, yr, mo - 1);
     const isDone = quickChecked[key] === "dot";
     const next = { ...quickChecked, [key]: isDone ? "empty" : "dot" };
     setQuickChecked(next);
@@ -387,6 +381,11 @@ export default function HomePage() {
 
   const titleName = displayName.trim();
   const possessiveName = titleName.endsWith("s") || titleName.endsWith("S") ? `${titleName}'` : `${titleName}'s`;
+  const onboardingSteps = [
+    { done: Boolean(oneThingSet), label: "Set your One Thing" },
+    { done: todayHabitsDone > 0, label: "Check one habit" },
+    { done: todayJournalCount > 0, label: "Write one journal entry" },
+  ];
 
   if (!authReady) {
     return (
@@ -397,7 +396,7 @@ export default function HomePage() {
           background: nightMode
             ? "linear-gradient(145deg, #070b0d 0%, #0c1117 35%, #101820 70%, #0e1a14 100%)"
             : "linear-gradient(145deg, #f7fbf4 0%, #eef7e8 40%, #e0f0da 75%, #d4ead4 100%)",
-          fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif",
+          fontFamily: "var(--font-manrope), sans-serif",
         }}
       >
         <div style={{ maxWidth: 820, margin: "0 auto", display: "grid", gap: 14, paddingTop: 60 }}>
@@ -443,11 +442,11 @@ export default function HomePage() {
           <p style={{ margin: 0, letterSpacing: 1.8, textTransform: "uppercase", color: nightMode ? "#b6bdc7" : "#2e7d32", fontWeight: 700, fontSize: 12 }}>
             Hibi
           </p>
-          <h1 style={{ margin: "10px 0 8px", color: nightMode ? "#e9ecef" : "#14532d", fontSize: "clamp(34px, 7vw, 56px)", lineHeight: 1.04, fontWeight: 800 }}>
-            Daily Space
+          <h1 className="hibi-brand-headline hibi-shimmer-text" style={{ margin: "10px 0 8px", fontSize: "clamp(34px, 7vw, 56px)", lineHeight: 1.04, fontWeight: 800 }}>
+            Daily Studio
           </h1>
           <p style={{ margin: "12px auto 0", color: nightMode ? "#c9d1da" : "#1b5e20", maxWidth: 520, fontSize: "clamp(16px, 3vw, 20px)", lineHeight: 1.45 }}>
-            Hibi greets you softly. Log in to begin your day with calm and intention.
+            Hibi greets you softly. Log in to shape your day with calm momentum and clear intent.
           </p>
           <div style={{ marginTop: 28, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
             <Link
@@ -464,6 +463,7 @@ export default function HomePage() {
 
   return (
     <main
+      className="hibi-aurora-bg"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -473,7 +473,7 @@ export default function HomePage() {
         background: nightMode
           ? "linear-gradient(145deg, #070b0d 0%, #0c1117 35%, #101820 70%, #0e1a14 100%)"
           : "linear-gradient(145deg, #f7fbf4 0%, #eef7e8 40%, #e0f0da 75%, #d4ead4 100%)",
-        fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif",
+        fontFamily: "var(--font-manrope), sans-serif",
         color: nightMode ? "#e9ecef" : "#0d2a14",
         animation: "hibiFadeIn var(--hibi-motion-normal) var(--hibi-ease-enter)",
       }}
@@ -546,12 +546,12 @@ export default function HomePage() {
         }}
       >
         <p style={{ margin: 0, color: nightMode ? "#6a7a6a" : "#4a7a50", fontWeight: 600, letterSpacing: 0.8, fontSize: 12, textTransform: "uppercase" }}>{dateLabel}</p>
-        <h1 style={{ margin: "8px 0 6px", fontSize: "clamp(28px, 5.5vw, 44px)", lineHeight: 1.06, fontWeight: 800, letterSpacing: -0.5 }}>{possessiveName} Daily Space</h1>
+        <h1 className="hibi-brand-headline" style={{ margin: "8px 0 6px", fontSize: "clamp(28px, 5.5vw, 44px)", lineHeight: 1.06, fontWeight: 800, letterSpacing: -0.5 }}>{possessiveName} Daily Studio</h1>
         <p style={{ margin: "0 0 20px", color: nightMode ? "#8a9e8a" : "#2e6e34", fontSize: 17, lineHeight: 1.5 }}>{message}</p>
 
         <div style={{ display: "grid", gap: 14 }}>
           <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px" }}>
-            <p style={{ margin: "0 0 10px", fontWeight: 700, color: nightMode ? "#8a9e8a" : "#2e6e34", fontSize: 12, textTransform: "uppercase", letterSpacing: 0.8 }}>Your mood spectrum for {monthLabel}</p>
+            <p style={{ margin: "0 0 10px", fontWeight: 700, color: nightMode ? "#8a9e8a" : "#2e6e34", fontSize: 12, textTransform: "uppercase", letterSpacing: 0.8 }}>Monthly momentum for {monthLabel}</p>
             <div style={{ position: "relative", height: 14, borderRadius: 999, background: "linear-gradient(90deg, #f59e0b 0%, #4ade80 55%, #16a34a 100%)", boxShadow: "0 2px 8px rgba(46,125,50,0.25)" }}>
               <span
                 style={{
@@ -572,28 +572,18 @@ export default function HomePage() {
           </div>
 
           <div className="hibi-home-stat-tiles" style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
-            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px", animation: "hibiFadeIn var(--hibi-motion-normal) var(--hibi-ease-enter)", animationDelay: "var(--hibi-stagger-home-1)", animationFillMode: "both" }}>
-              <p style={{ margin: "0 0 4px", color: nightMode ? "#6a7a6a" : "#4a7a50", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>Rhythm</p>
-              <p style={{ margin: 0, color: nightMode ? "#e9ecef" : "#0d2a14", fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}>{rhythmLabel}</p>
-            </div>
-            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px", animation: "hibiFadeIn var(--hibi-motion-normal) var(--hibi-ease-enter)", animationDelay: "var(--hibi-stagger-home-2)", animationFillMode: "both" }}>
-              <p style={{ margin: "0 0 4px", color: nightMode ? "#6a7a6a" : "#4a7a50", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>Habit Streak</p>
-              <p style={{ margin: 0, color: nightMode ? "#e9ecef" : "#0d2a14", fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}>{streak}<span style={{ fontSize: 14, fontWeight: 500, color: nightMode ? "#6a7a6a" : "#4a7a50" }}> day{streak === 1 ? "" : "s"}</span></p>
-            </div>
-            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px", animation: "hibiFadeIn var(--hibi-motion-normal) var(--hibi-ease-enter)", animationDelay: "var(--hibi-stagger-home-3)", animationFillMode: "both" }}>
-              <p style={{ margin: "0 0 4px", color: nightMode ? "#6a7a6a" : "#4a7a50", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>Journal Streak</p>
-              <p style={{ margin: 0, color: nightMode ? "#e9ecef" : "#0d2a14", fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}>{journalStreak}<span style={{ fontSize: 14, fontWeight: 500, color: nightMode ? "#6a7a6a" : "#4a7a50" }}> day{journalStreak === 1 ? "" : "s"}</span></p>
-            </div>
-            <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px", animation: "hibiFadeIn var(--hibi-motion-normal) var(--hibi-ease-enter)", animationDelay: "var(--hibi-stagger-home-4)", animationFillMode: "both" }}>
-              <p style={{ margin: "0 0 4px", color: nightMode ? "#6a7a6a" : "#4a7a50", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>This Month</p>
-              <p style={{ margin: 0, color: nightMode ? "#e9ecef" : "#0d2a14", fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}>{wordsThisMonth >= 1000 ? `${(wordsThisMonth / 1000).toFixed(1)}k` : wordsThisMonth}<span style={{ fontSize: 14, fontWeight: 500, color: nightMode ? "#6a7a6a" : "#4a7a50" }}> words</span></p>
-            </div>
+            <StatCard label="Rhythm" value={rhythmLabel} nightMode={nightMode} delay="var(--hibi-stagger-home-1)" />
+            <StatCard label="Habit Streak" value={streak} suffix={` day${streak === 1 ? "" : "s"}`} nightMode={nightMode} delay="var(--hibi-stagger-home-2)" />
+            <StatCard label="Journal Streak" value={journalStreak} suffix={` day${journalStreak === 1 ? "" : "s"}`} nightMode={nightMode} delay="var(--hibi-stagger-home-3)" />
+            <StatCard label="This Month" value={wordsThisMonth >= 1000 ? `${(wordsThisMonth / 1000).toFixed(1)}k` : wordsThisMonth} suffix=" words" nightMode={nightMode} delay="var(--hibi-stagger-home-4)" />
           </div>
 
           <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px" }}>
-            <p style={{ margin: "0 0 6px", color: nightMode ? "#6a7a6a" : "#4a7a50", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>Gentle suggestion</p>
+            <p style={{ margin: "0 0 6px", color: nightMode ? "#6a7a6a" : "#4a7a50", fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>Momentum cue</p>
             <p style={{ margin: 0, color: nightMode ? "#c9d1da" : "#1a4a22", lineHeight: 1.55 }}>{gentleSuggestion}</p>
           </div>
+
+          <OnboardingChecklist steps={onboardingSteps} nightMode={nightMode} />
 
           <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr", marginBottom: 0 }}>
             <div style={{ background: nightMode ? "rgba(255,255,255,0.04)" : "rgba(46,125,50,0.05)", border: `1px solid ${nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.12)"}`, borderRadius: 16, padding: "14px 16px" }}>
@@ -612,10 +602,10 @@ export default function HomePage() {
 
           <div className="hibi-home-cta-row" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <Link href="/habits" style={{ textDecoration: "none", background: nightMode ? "#22c55e" : "#1a6e36", color: "#fff", padding: "10px 20px", borderRadius: 999, fontWeight: 700, boxShadow: nightMode ? "0 2px 12px rgba(34,197,94,0.35)" : "0 2px 12px rgba(26,110,54,0.30)", fontSize: 14, animation: allHabitsDone ? "hibiPulseGreen var(--hibi-motion-slow) var(--hibi-ease-standard) infinite" : "none" }}>
-              Today&apos;s Habits →
+              Open Habit Studio →
             </Link>
             <Link href="/today" style={{ textDecoration: "none", background: nightMode ? "rgba(255,255,255,0.07)" : "rgba(46,125,50,0.09)", color: nightMode ? "#c9d1da" : "#1a5c1e", padding: "10px 20px", borderRadius: 999, fontWeight: 600, border: `1px solid ${nightMode ? "rgba(255,255,255,0.10)" : "rgba(46,125,50,0.18)"}`, fontSize: 14 }}>
-              Open Journal
+              Open Journal Studio
             </Link>
           </div>
         </div>
@@ -640,7 +630,7 @@ export default function HomePage() {
           ✦ One Thing
         </p>
         <p style={{ margin: "0 0 14px", color: nightMode ? "#8a9e8a" : "#4a7a50", fontSize: 13 }}>
-          What is the single most meaningful thing you want to do today?
+          What is the one meaningful move you want to complete today?
         </p>
         {oneThingSet ? (
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -659,7 +649,7 @@ export default function HomePage() {
               value={oneThingInput}
               onChange={(e) => setOneThingInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") commitOneThing(); }}
-              placeholder="Type your one intention for today…"
+              placeholder="Name your one focus for today…"
               style={{
                 flex: 1,
                 padding: "10px 14px",
@@ -684,7 +674,7 @@ export default function HomePage() {
                 cursor: "pointer",
               }}
             >
-              Set ★
+              Save Focus ★
             </button>
           </div>
         )}

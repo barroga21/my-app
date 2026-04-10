@@ -1,9 +1,16 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Fraunces, Manrope, Geist_Mono } from "next/font/google";
+import PwaRegister from "@/app/components/PwaRegister";
+import ObservabilityProvider from "@/app/components/ObservabilityProvider";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const manrope = Manrope({
+  variable: "--font-manrope",
+  subsets: ["latin"],
+});
+
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
   subsets: ["latin"],
 });
 
@@ -15,6 +22,16 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Hibi",
   description: "Your daily journal, habit tracker, and planner",
+  metadataBase: new URL("https://hibi.app"),
+  openGraph: {
+    title: "Hibi",
+    description: "Your daily journal, habit tracker, and planner",
+    url: "https://hibi.app",
+    type: "website",
+  },
+  alternates: {
+    canonical: "/",
+  },
 };
 
 export default function RootLayout({
@@ -25,7 +42,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${manrope.variable} ${fraunces.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
         <link rel="manifest" href="/manifest.json" />
@@ -33,7 +50,11 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
       </head>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <PwaRegister />
+        <ObservabilityProvider />
+        {children}
+      </body>
     </html>
   );
 }

@@ -1,11 +1,40 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useNightMode } from "@/lib/useNightMode";
 import { INTERACTION_TUNING, shouldTriggerSwipeDelete, triggerHaptic } from "@/lib/interactionTuning";
+import { useAuthBootstrap } from "@/lib/hooks/useAuthBootstrap";
+import { useLongPress } from "@/lib/hooks/useLongPress";
+import { useCommandPalette } from "@/lib/hooks/useCommandPalette";
+import { useReducedMotion } from "@/lib/hooks/useReducedMotion";
+import { useFocusTrap } from "@/lib/hooks/useFocusTrap";
+import { usePerformanceProbe } from "@/lib/hooks/usePerformanceProbe";
+import {
+  safeReadJSON,
+  safeWriteJSON,
+  sanitizeHabitChecksMap,
+  sanitizeStringArray,
+} from "@/lib/storageSchema";
+import {
+  hasSeenHabitTips,
+  markHabitTipsSeen,
+  readMonthHabitChecks,
+  readArchivedHabits,
+  readHabitCloseouts,
+  readHabitColors,
+  readHabitNotes,
+  readVacationDays,
+  writeMonthHabitChecks,
+  writeHabitCloseouts,
+  writeHabitColors,
+  writeHabitNotes,
+  writeVacationDays,
+} from "@/lib/repositories/habitsRepo";
 import NavBar from "@/app/components/NavBar";
+import CommandPaletteDialog from "@/app/components/ui/CommandPaletteDialog";
+import LiveRegion from "@/app/components/ui/LiveRegion";
 
 function dedupeHabits(list) {
   return [...new Map(list.map((h) => [h.toLowerCase(), h])).values()];
@@ -16,8 +45,6 @@ export default function HabitTracker() {
   const [newHabit, setNewHabit] = useState("");
   const [checked, setChecked] = useState({});
   const [status, setStatus] = useState("");
-  const [userId, setUserId] = useState(null);
-  const [authReady, setAuthReady] = useState(false);
   const [dailyCloseout, setDailyCloseout] = useState({
     helped: "",
     slowed: "",
@@ -31,7 +58,7 @@ export default function HabitTracker() {
   const [completionPulseKey, setCompletionPulseKey] = useState(null);
   const [completionCheckKey, setCompletionCheckKey] = useState(null);
   const [habitNotes, setHabitNotes] = useState({});
-  const [softFocusMode, setSoftFocusMode] = useState(false);
+  const [softFocusMode, setSoftFocusMode] = useState(() => typeof window !== "undefined" && window.innerWidth <= 768);
   const [softFocusHabit, setSoftFocusHabit] = useState("");
   const [softFocusTransition, setSoftFocusTransition] = useState(false);
   const [softFocusCardKey, setSoftFocusCardKey] = useState(0);
@@ -43,14 +70,38 @@ export default function HabitTracker() {
   const [colorPickerPos, setColorPickerPos] = useState({ x: 0, y: 0 });
   const [vacationDays, setVacationDays] = useState(new Set());
   const [habitStatsPopover, setHabitStatsPopover] = useState(null);
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth <= 768);
+  const [showHabitTips, setShowHabitTips] = useState(false);
+  const [habitContextMenu, setHabitContextMenu] = useState({ open: false, x: 0, y: 0, habit: "" });
   const cellClickTimersRef = useRef({});
   const habitSwipeStartRef = useRef({});
+  const setHabitCellStateRef = useRef(null);
+  const habitContextMenuRef = useRef(null);
   const router = useRouter();
+  const reducedMotion = useReducedMotion();
+  const { authReady, userId } = useAuthBootstrap({ supabase, router, redirectTo: "/login" });
   const nightMode = useNightMode();
 
+  const habitLongPress = useLongPress((habit, e) => {
+    if (!habit) return;
+    const touch = e?.touches?.[0] || e?.changedTouches?.[0];
+    const x = touch?.clientX || e?.clientX || window.innerWidth / 2;
+    const y = touch?.clientY || e?.clientY || window.innerHeight / 2;
+    setHabitContextMenu({ open: true, x, y, habit });
+  }, { delay: 460 });
+
+  useFocusTrap({
+    open: habitContextMenu.open,
+    containerRef: habitContextMenuRef,
+    onClose: () => setHabitContextMenu({ open: false, x: 0, y: 0, habit: "" }),
+  });
+
   useEffect(() => {
-    setIsMobile(window.innerWidth <= 768);
+    function handleResize() {
+      setIsMobile(window.innerWidth <= 768);
+    }
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
 
   const now = new Date();
@@ -62,125 +113,32 @@ export default function HabitTracker() {
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const days = Array.from({ length: 31 }, (_, i) => i + 1);
 
-  function habitStorageKey(activeUserId) {
-    return `habit_checks_${activeUserId || "guest"}_${viewYear}_${String(viewMonth + 1).padStart(2, "0")}`;
-  }
-
-  function habitChecksBackupKey(activeUserId) {
-    return `hibi_habit_checks_backup_${activeUserId || "guest"}_${viewYear}_${String(viewMonth + 1).padStart(2, "0")}`;
-  }
-
   function habitListStorageKey(activeUserId) {
     return `habit_list_${activeUserId || "guest"}`;
   }
 
-  function closeoutStorageKey(activeUserId) {
-    return `habit_closeouts_${activeUserId || "guest"}_${viewYear}_${String(viewMonth + 1).padStart(2, "0")}`;
-  }
-
-  function habitNotesStorageKey(activeUserId) {
-    return `habit_notes_${activeUserId || "guest"}_${viewYear}_${String(viewMonth + 1).padStart(2, "0")}`;
-  }
-
-  function readLocalMonthChecks(activeUserId) {
-    try {
-      const raw = localStorage.getItem(habitStorageKey(activeUserId));
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === "object" ? parsed : {};
-    } catch {
-      return {};
-    }
-  }
-
-  function readLocalMonthChecksBackup(activeUserId) {
-    try {
-      const raw = localStorage.getItem(habitChecksBackupKey(activeUserId));
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === "object" ? parsed : {};
-    } catch {
-      return {};
-    }
-  }
-
   function writeLocalMonthChecks(map, activeUserId) {
-    try {
-      localStorage.setItem(habitStorageKey(activeUserId), JSON.stringify(map));
-      localStorage.setItem(habitChecksBackupKey(activeUserId), JSON.stringify(map));
-    } catch {
-      // Ignore localStorage failures gracefully.
-    }
-  }
-
-  function readLocalHabitList(activeUserId) {
-    try {
-      const raw = localStorage.getItem(habitListStorageKey(activeUserId));
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
+    writeMonthHabitChecks(activeUserId, viewYear, viewMonth, map);
   }
 
   function writeLocalHabitList(list, activeUserId) {
-    try {
-      localStorage.setItem(habitListStorageKey(activeUserId), JSON.stringify(list));
-    } catch {
-      // Ignore localStorage failures gracefully.
-    }
-  }
-
-  function readLocalCloseouts(activeUserId) {
-    try {
-      const raw = localStorage.getItem(closeoutStorageKey(activeUserId));
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === "object" ? parsed : {};
-    } catch {
-      return {};
-    }
+    safeWriteJSON(habitListStorageKey(activeUserId), list);
   }
 
   function writeLocalCloseouts(map, activeUserId) {
-    try {
-      localStorage.setItem(closeoutStorageKey(activeUserId), JSON.stringify(map));
-    } catch {
-      // Ignore localStorage failures gracefully.
-    }
-  }
-
-  function readLocalHabitNotes(activeUserId) {
-    try {
-      const raw = localStorage.getItem(habitNotesStorageKey(activeUserId));
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === "object" ? parsed : {};
-    } catch {
-      return {};
-    }
+    writeHabitCloseouts(activeUserId, viewYear, viewMonth, map);
   }
 
   function writeLocalHabitNotes(map, activeUserId) {
-    try {
-      localStorage.setItem(habitNotesStorageKey(activeUserId), JSON.stringify(map));
-    } catch {
-      // Ignore localStorage failures gracefully.
-    }
+    writeHabitNotes(activeUserId, viewYear, viewMonth, map);
   }
 
   function readLocalHabitColors(activeUserId) {
-    try {
-      const raw = localStorage.getItem(`habit_colors_${activeUserId || "guest"}`);
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === "object" ? parsed : {};
-    } catch {
-      return {};
-    }
+    return readHabitColors(activeUserId);
   }
 
   function writeLocalHabitColors(map, activeUserId) {
-    try {
-      localStorage.setItem(`habit_colors_${activeUserId || "guest"}`, JSON.stringify(map));
-    } catch {
-      // Ignore localStorage failures.
-    }
+    writeHabitColors(activeUserId, map);
   }
 
   function setHabitColor(habit, color) {
@@ -190,22 +148,8 @@ export default function HabitTracker() {
     writeLocalHabitColors(next, userId);
   }
 
-  function readLocalArchivedHabits(activeUserId) {
-    try {
-      const raw = localStorage.getItem(`habit_archived_${activeUserId || "guest"}`);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-
   function writeLocalArchivedHabits(list, activeUserId) {
-    try {
-      localStorage.setItem(`habit_archived_${activeUserId || "guest"}`, JSON.stringify(list));
-    } catch {
-      // Ignore localStorage failures.
-    }
+    safeWriteJSON(`habit_archived_${activeUserId || "guest"}`, list);
   }
 
   function formatDate(day) {
@@ -261,37 +205,6 @@ export default function HabitTracker() {
     return () => window.removeEventListener("keydown", handleKey);
   }, []);
 
-  // Cmd/Ctrl+Enter quickly marks a habit done for the current day.
-  useEffect(() => {
-    function handleQuickToggle(e) {
-      if (!(e.metaKey || e.ctrlKey) || e.key !== "Enter") return;
-      const tag = document.activeElement?.tagName?.toLowerCase();
-      if (tag === "input" || tag === "textarea") return;
-      if (!habits.length) return;
-      e.preventDefault();
-
-      const currentDay =
-        viewYear === now.getFullYear() && viewMonth === now.getMonth()
-          ? now.getDate()
-          : Math.min(now.getDate(), daysInMonth);
-
-      const target =
-        (softFocusMode && softFocusHabit)
-          ? softFocusHabit
-          : habits.find((h) => checked[`${h}-${currentDay}`] !== "dot") || habits[0];
-      if (target) toggle(target, currentDay);
-    }
-    window.addEventListener("keydown", handleQuickToggle);
-    return () => window.removeEventListener("keydown", handleQuickToggle);
-  }, [habits, checked, daysInMonth, softFocusMode, softFocusHabit, viewYear, viewMonth]);
-
-  // Auto-enter Soft Focus on mobile screens (≤768px)
-  useEffect(() => {
-    if (typeof window !== "undefined" && window.innerWidth <= 768) {
-      setSoftFocusMode(true);
-    }
-  }, []);
-
   // Close color picker on outside click
   useEffect(() => {
     if (!colorPickerOpenFor) return;
@@ -307,13 +220,7 @@ export default function HabitTracker() {
   // Load vacation days from localStorage
   useEffect(() => {
     if (!userId) return;
-    try {
-      const raw = localStorage.getItem(`hibi_vacation_${userId}`);
-      const parsed = raw ? JSON.parse(raw) : [];
-      setVacationDays(new Set(Array.isArray(parsed) ? parsed : []));
-    } catch {
-      setVacationDays(new Set());
-    }
+    setTimeout(() => setVacationDays(readVacationDays(userId)), 0);
   }, [userId]);
 
   function toggleVacationToday() {
@@ -325,9 +232,7 @@ export default function HabitTracker() {
       } else {
         next.add(todayKey);
       }
-      try {
-        localStorage.setItem(`hibi_vacation_${userId}`, JSON.stringify([...next]));
-      } catch {}
+      writeVacationDays(userId, next);
       return next;
     });
   }
@@ -338,43 +243,40 @@ export default function HabitTracker() {
   }
 
   useEffect(() => {
-    let unsubscribe = null;
-
-    async function loadUser() {
-      if (!supabase) {
-        showStatus("Supabase is not configured. Using local saved data.");
-        setAuthReady(true);
-        return;
-      }
-
-      const { data } = await supabase.auth.getUser();
-      const currentUserId = data?.user?.id || null;
-      if (!currentUserId) {
-        router.replace("/login");
-        return;
-      }
-      setUserId(currentUserId);
-      setAuthReady(true);
-
-      const { data: listener } = supabase.auth.onAuthStateChange((_, session) => {
-        const nextUserId = session?.user?.id || null;
-        setUserId(nextUserId);
-        if (!nextUserId) {
-          router.replace("/login");
-        }
-      });
-      unsubscribe = () => listener.subscription.unsubscribe();
+    if (!userId) return;
+    const seenTip = hasSeenHabitTips(userId);
+    if (!seenTip) {
+      setTimeout(() => setShowHabitTips(true), 0);
     }
-    loadUser();
-
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, [router]);
+  }, [userId]);
 
   useEffect(() => {
+    const monthPrefix = `${viewYear}_${String(viewMonth + 1).padStart(2, "0")}`;
+    const listKey = `habit_list_${userId || "guest"}`;
+    const checksKey = `habit_checks_${userId || "guest"}_${monthPrefix}`;
+    const backupKey = `hibi_habit_checks_backup_${userId || "guest"}_${monthPrefix}`;
+
+    function onStorage(event) {
+      if (!userId || !event.key) return;
+      if (event.key === listKey) {
+        setHabits(dedupeHabits(sanitizeStringArray(safeReadJSON(listKey, []))));
+      }
+      if (event.key === checksKey || event.key === backupKey) {
+        const primary = safeReadJSON(checksKey, {}, sanitizeHabitChecksMap);
+        const backup = safeReadJSON(backupKey, {}, sanitizeHabitChecksMap);
+        setChecked({ ...backup, ...primary });
+      }
+    }
+
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [userId, viewMonth, viewYear]);
+
+  useEffect(() => {
+    const listKey = `habit_list_${userId || "guest"}`;
+
     async function loadHabitList() {
-      const localList = readLocalHabitList(userId);
+      const localList = sanitizeStringArray(safeReadJSON(listKey, []));
 
       // Only show default habits for first-time users (no local or remote habits)
       if (localList.length > 0) {
@@ -382,12 +284,12 @@ export default function HabitTracker() {
         setHabits(deduped);
         // Persist deduplicated list so it doesn't reload with duplicates
         if (deduped.length !== localList.length) {
-          writeLocalHabitList(deduped, userId);
+          safeWriteJSON(listKey, deduped);
         }
       } else if (!supabase || !userId) {
         // If no Supabase or user, and no local habits, start empty
         setHabits([]);
-        writeLocalHabitList([], userId);
+        safeWriteJSON(listKey, []);
         return;
       }
 
@@ -402,7 +304,7 @@ export default function HabitTracker() {
         // If error and no local habits, start empty (do not restore defaults after deletion)
         if (localList.length === 0) {
           setHabits([]);
-          writeLocalHabitList([], userId);
+          safeWriteJSON(listKey, []);
         }
         return;
       }
@@ -410,35 +312,26 @@ export default function HabitTracker() {
       const remoteList = dedupeHabits((data || []).map((row) => row.habit_name).filter(Boolean));
       if (remoteList.length > 0) {
         setHabits(remoteList);
-        writeLocalHabitList(remoteList, userId);
+        safeWriteJSON(listKey, remoteList);
       } else if (localList.length === 0) {
         setHabits([]);
-        writeLocalHabitList([], userId);
+        safeWriteJSON(listKey, []);
       }
     }
 
+    function loadAuxiliaryHabitData() {
+      const archived = readArchivedHabits(userId);
+      setArchivedHabits(archived);
+      setHabitColors(readLocalHabitColors(userId));
+    }
+
     loadHabitList();
-    setArchivedHabits(readLocalArchivedHabits(userId));
-    setHabitColors(readLocalHabitColors(userId));
+    loadAuxiliaryHabitData();
   }, [userId]);
 
   useEffect(() => {
     async function loadChecks() {
-      const localMap = readLocalMonthChecks(userId);
-      const backupMap = readLocalMonthChecksBackup(userId);
-      const hasPrimary = Object.keys(localMap).length > 0;
-      const hasBackup = Object.keys(backupMap).length > 0;
-      const hydratedLocalMap = hasPrimary
-        ? { ...backupMap, ...localMap }
-        : hasBackup
-        ? backupMap
-        : localMap;
-
-      if (!hasPrimary && hasBackup) {
-        // Restore primary storage from backup if the primary key was cleared or renamed.
-        writeLocalMonthChecks(backupMap, userId);
-      }
-
+      const hydratedLocalMap = readMonthHabitChecks(userId, viewYear, viewMonth);
       setChecked(hydratedLocalMap);
 
       if (!supabase) {
@@ -469,24 +362,33 @@ export default function HabitTracker() {
         map[`${row.habit}-${day}`] = row.completed ? "dot" : "fill";
       });
       setChecked(map);
-      writeLocalMonthChecks(map, userId);
+      writeMonthHabitChecks(userId, viewYear, viewMonth, map);
       showStatus("Connected to Supabase.");
     }
     loadChecks();
   }, [viewMonth, viewYear, userId]);
 
   useEffect(() => {
-    const localCloseouts = readLocalCloseouts(userId);
-    setMonthCloseouts(localCloseouts);
+    function hydrateCloseouts() {
+      const localCloseouts = readHabitCloseouts(userId, viewYear, viewMonth);
+      setMonthCloseouts(localCloseouts);
 
-    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-    const todayCloseout = localCloseouts[todayKey] || { helped: "", slowed: "", carry: "" };
-    setDailyCloseout(todayCloseout);
+      const todayDate = new Date();
+      const todayKey = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, "0")}-${String(todayDate.getDate()).padStart(2, "0")}`;
+      const todayCloseout = localCloseouts[todayKey] || { helped: "", slowed: "", carry: "" };
+      setDailyCloseout(todayCloseout);
+    }
+
+    hydrateCloseouts();
   }, [userId, viewYear, viewMonth]);
 
   useEffect(() => {
-    const localNotes = readLocalHabitNotes(userId);
-    setHabitNotes(localNotes);
+    function hydrateHabitNotes() {
+      const localNotes = readHabitNotes(userId, viewYear, viewMonth);
+      setHabitNotes(localNotes);
+    }
+
+    hydrateHabitNotes();
   }, [userId, viewYear, viewMonth]);
 
   function saveDailyCloseout(e) {
@@ -584,6 +486,35 @@ export default function HabitTracker() {
     const next = current === "empty" ? "dot" : current === "dot" ? "fill" : "empty";
     await setHabitCellState(habit, day, next);
   }
+
+  useEffect(() => {
+    setHabitCellStateRef.current = setHabitCellState;
+  });
+
+  // Cmd/Ctrl+Enter quickly marks a habit done for the current day.
+  useEffect(() => {
+    function handleQuickToggle(e) {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== "Enter") return;
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea") return;
+      if (!habits.length) return;
+      e.preventDefault();
+
+      const todayDate = new Date();
+      const currentDay =
+        viewYear === todayDate.getFullYear() && viewMonth === todayDate.getMonth()
+          ? todayDate.getDate()
+          : Math.min(todayDate.getDate(), daysInMonth);
+
+      const target =
+        (softFocusMode && softFocusHabit)
+          ? softFocusHabit
+          : habits.find((h) => checked[`${h}-${currentDay}`] !== "dot") || habits[0];
+      if (target) setHabitCellStateRef.current?.(target, currentDay, "dot");
+    }
+    window.addEventListener("keydown", handleQuickToggle);
+    return () => window.removeEventListener("keydown", handleQuickToggle);
+  }, [checked, daysInMonth, habits, softFocusHabit, softFocusMode, viewMonth, viewYear]);
 
   async function addHabit(e) {
     e.preventDefault();
@@ -835,7 +766,7 @@ export default function HabitTracker() {
     if (!isMobile) return;
     const t = e.changedTouches?.[0];
     if (!t) return;
-    habitSwipeStartRef.current[habit] = { x: t.clientX, y: t.clientY, at: Date.now() };
+    habitSwipeStartRef.current[habit] = { x: t.clientX, y: t.clientY, at: e.timeStamp || 0 };
   }
 
   function handleHabitRowTouchEnd(habit, e) {
@@ -851,8 +782,9 @@ export default function HabitTracker() {
   }
 
   useEffect(() => {
+    const timers = cellClickTimersRef.current;
     return () => {
-      Object.values(cellClickTimersRef.current).forEach((timer) => clearTimeout(timer));
+      Object.values(timers).forEach((timer) => clearTimeout(timer));
     };
   }, []);
 
@@ -932,11 +864,15 @@ export default function HabitTracker() {
   }
 
   useEffect(() => {
-    const nextHabit = getNextFocusHabit();
-    if (!softFocusHabit || !habits.includes(softFocusHabit)) {
-      setSoftFocusHabit(nextHabit);
+    function syncSoftFocusHabit() {
+      const nextHabit = habits.find((habit) => checked[`${habit}-${ringDay}`] !== "dot") || habits[0] || "";
+      if (!softFocusHabit || !habits.includes(softFocusHabit)) {
+        setSoftFocusHabit(nextHabit);
+      }
     }
-  }, [habits, checked, ringDay]);
+
+    syncSoftFocusHabit();
+  }, [habits, checked, ringDay, softFocusHabit]);
 
   function computeHabitStreak(habit) {
     let currentStreak = 0;
@@ -984,7 +920,6 @@ export default function HabitTracker() {
   }));
 
   const monthlyDone = habitStats.reduce((sum, h) => sum + h.done, 0);
-  const monthlyMissed = habitStats.reduce((sum, h) => sum + h.missed, 0);
   const totalPossible = habits.length * analysisDays;
   const overallRate = totalPossible ? Math.round((monthlyDone / totalPossible) * 100) : 0;
 
@@ -1139,6 +1074,25 @@ export default function HabitTracker() {
   const moodGradient =
     "linear-gradient(135deg, #F4C7A1 0%, #E8DCC2 25%, #C8D8C0 50%, #BFCAD8 75%, #8A94A6 100%)";
   const moodScale = 0.86 + Math.min(0.25, overallRate / 400);
+  const habitCommands = [
+    { label: "Add habit", group: "Habit", shortcut: "A", keywords: "new create", action: () => document.querySelector("input[placeholder='Add your own habit']")?.focus() },
+    { label: "Toggle soft focus", group: "View", shortcut: "F", keywords: "focus", action: () => setSoftFocusMode((v) => !v) },
+    { label: "Go to previous month", group: "Navigation", shortcut: "Left", keywords: "month back", action: goPrevMonth },
+    { label: "Go to next month", group: "Navigation", shortcut: "Right", keywords: "month forward", action: goNextMonth },
+    { label: "Jump to today", group: "Navigation", shortcut: "Today", keywords: "current month", action: goToToday },
+    { label: "Undo removed habit", group: "Habit", shortcut: "Undo", keywords: "restore", action: undoRemoveHabit },
+  ];
+  const palette = useCommandPalette(habitCommands);
+
+  usePerformanceProbe("habits", {
+    habitCount: habits.length,
+    checkedCellCount: Object.keys(checked || {}).length,
+    noteCount,
+    commandCount: palette.filtered.length,
+  });
+
+  const liveMessage = closeoutStatus || status || "";
+
   const habitTheme = {
     panel: nightMode ? "rgba(12,16,22,0.82)" : "rgba(255,255,255,0.82)",
     panelAlt: nightMode ? "rgba(15,20,26,0.85)" : "rgba(240,250,240,0.90)",
@@ -1162,7 +1116,7 @@ export default function HabitTracker() {
           background: nightMode
             ? "linear-gradient(145deg, #070b0d 0%, #0c1117 35%, #101820 70%, #0e1a14 100%)"
             : "linear-gradient(145deg, #f7fbf4 0%, #eef7e8 40%, #e0f0da 75%, #d4ead4 100%)",
-          fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif",
+          fontFamily: "var(--font-manrope), sans-serif",
           color: nightMode ? "#e9ecef" : "#14532d",
         }}
       >
@@ -1179,13 +1133,14 @@ export default function HabitTracker() {
 
   return (
     <main
+      className="hibi-aurora-bg"
       style={{
         padding: "28px 24px",
         minHeight: "100vh",
         background: nightMode
           ? "linear-gradient(145deg, #070b0d 0%, #0c1117 35%, #101820 70%, #0e1a14 100%)"
           : "linear-gradient(145deg, #f7fbf4 0%, #eef7e8 40%, #e0f0da 75%, #d4ead4 100%)",
-        fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif",
+        fontFamily: "var(--font-manrope), sans-serif",
         position: 'relative',
         animation: "hibiFadeIn 0.35s ease",
       }}
@@ -1208,7 +1163,7 @@ export default function HabitTracker() {
         >
           <span style={{ fontSize: 18 }}>🌙</span>
           <span style={{ color: nightMode ? "#fdba74" : "#c2620a", fontWeight: 700, fontSize: 13 }}>
-            Evening reminder:
+            Evening check-in:
           </span>
           <span style={{ color: nightMode ? "#fcd34d" : "#92400e", fontSize: 13, flex: 1 }}>
             {habits.length - ringDoneCount} habit{habits.length - ringDoneCount === 1 ? "" : "s"} left to complete today.
@@ -1216,6 +1171,7 @@ export default function HabitTracker() {
         </div>
       )}
       <h1
+        className="hibi-brand-headline"
         style={{
           color: habitTheme.heading,
           fontWeight: 800,
@@ -1224,8 +1180,11 @@ export default function HabitTracker() {
           marginBottom: 4,
         }}
       >
-        Habit Tracker
+        Habit Studio
       </h1>
+      <p style={{ margin: "0 0 10px", color: habitTheme.muted, fontSize: 13 }}>
+        Build tiny promises and keep them visible.
+      </p>
       <div
         style={{
           display: "flex",
@@ -1303,6 +1262,23 @@ export default function HabitTracker() {
         >
           →
         </button>
+        <button
+          type="button"
+          onClick={() => palette.setOpen(true)}
+          title="Open command palette"
+          style={{
+            border: `1px solid ${nightMode ? "rgba(255,255,255,0.14)" : "rgba(46,125,50,0.24)"}`,
+            background: "transparent",
+            color: habitTheme.muted,
+            borderRadius: 999,
+            padding: "4px 10px",
+            cursor: "pointer",
+            fontSize: 12,
+            fontWeight: 700,
+          }}
+        >
+          ⌘K
+        </button>
         {(viewYear !== new Date().getFullYear() || viewMonth !== new Date().getMonth()) && (
           <button
             onClick={goToToday}
@@ -1345,7 +1321,7 @@ export default function HabitTracker() {
       </div>
       {isTodayVacation() && (
         <p style={{ margin: "6px 0 0", fontSize: 12, color: nightMode ? "#fdba74" : "#c2620a", fontStyle: "italic" }}>
-          Rest day is on — missed habits today won't break your streak.
+          Rest day is on — missed habits today won&apos;t break your streak.
         </p>
       )}
       <p style={{
@@ -1361,6 +1337,21 @@ export default function HabitTracker() {
         minHeight: 20,
         fontSize: 13,
       }}>{status}</p>
+      {showHabitTips ? (
+        <div style={{ marginBottom: 10, borderRadius: 12, border: `1px solid ${habitTheme.border}`, background: nightMode ? "rgba(34,197,94,0.10)" : "rgba(26,110,54,0.08)", padding: "10px 12px", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", maxWidth: 760 }}>
+          <span style={{ color: habitTheme.heading, fontSize: 12, fontWeight: 700 }}>Tips:</span>
+          <span style={{ color: habitTheme.muted, fontSize: 12, flex: 1 }}>Use F for Focus Mode, double-click a cell for notes, and long-press a habit name for quick actions.</span>
+          <button
+            onClick={() => {
+              setShowHabitTips(false);
+              markHabitTipsSeen(userId);
+            }}
+            style={{ border: `1px solid ${habitTheme.border}`, background: "transparent", color: habitTheme.muted, borderRadius: 8, padding: "4px 8px", fontSize: 11, cursor: "pointer", fontWeight: 700 }}
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
       {lastRemovedHabit && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, background: nightMode ? "#1b2026" : "#e8f5e9", border: `1px solid ${nightMode ? "#2b3139" : "#a5d6a7"}`, borderRadius: 8, padding: "7px 12px", marginBottom: 10, maxWidth: 520 }}>
           <span style={{ color: nightMode ? "#e9ecef" : "#14532d", fontSize: 13 }}>&#8220;{lastRemovedHabit.name}&#8221; removed.</span>
@@ -1369,10 +1360,10 @@ export default function HabitTracker() {
         </div>
       )}
       <p className="hibi-habits-instructions" style={{ color: habitTheme.muted, fontWeight: 500, marginBottom: 8 }}>
-        Tap a cell to cycle: empty → dot (done) → filled square (did not do).
+        Tap a cell to cycle states: empty → dot (done) → filled square (missed).
       </p>
       <p className="hibi-habits-instructions" style={{ color: habitTheme.muted, fontWeight: 500, marginBottom: 8 }}>
-        Tap a habit name to rename it. Press Enter or click away to save. Double-click a day cell to add/edit a tiny note.
+        Tap a habit name to rename it. Press Enter or click away to save. Double-click any day cell to add a quick note.
       </p>
       <div
         style={{
@@ -1401,7 +1392,7 @@ export default function HabitTracker() {
               fontSize: 13,
             }}
           >
-            Enter Soft Focus <span style={{ fontSize: 11, opacity: 0.6, fontWeight: 500 }}>[F]</span>
+            Enter Focus Mode <span style={{ fontSize: 11, opacity: 0.6, fontWeight: 500 }}>[F]</span>
           </button>
         ) : (
           <button
@@ -1775,6 +1766,11 @@ export default function HabitTracker() {
                                           setEditingHabit(habit);
                                           setEditingHabitValue(habit);
                                         }}
+                                        onMouseDown={(e) => habitLongPress.onMouseDown(habit, e)}
+                                        onMouseUp={habitLongPress.onMouseUp}
+                                        onMouseLeave={habitLongPress.onMouseLeave}
+                                        onTouchStart={(e) => habitLongPress.onTouchStart(habit, e)}
+                                        onTouchEnd={habitLongPress.onTouchEnd}
                                         className="hibi-habits-name-btn"
                                         style={{
                                           border: "none",
@@ -1801,7 +1797,7 @@ export default function HabitTracker() {
                                       <button
                                         type="button"
                                         onClick={() => setHabitStatsPopover(habit)}
-                                        title={`View stats for ${habit}`}
+                                        title={`View stats for ${habit}: completion rate and streak details`}
                                         aria-label={`View stats for ${habit}`}
                                         style={{ border: "none", background: "transparent", color: habitTheme.muted, cursor: "pointer", fontSize: 12, lineHeight: 1, padding: "0 2px" }}
                                       >
@@ -2255,17 +2251,44 @@ export default function HabitTracker() {
           </div>
         </div>
       )}
+      {habitContextMenu.open ? (
+        <div role="presentation" style={{ position: "fixed", inset: 0, zIndex: 70 }} onClick={() => setHabitContextMenu({ open: false, x: 0, y: 0, habit: "" })}>
+          <div
+            ref={habitContextMenuRef}
+            tabIndex={-1}
+            role="menu"
+            aria-label="Habit quick actions"
+            style={{ position: "fixed", left: habitContextMenu.x, top: habitContextMenu.y, transform: "translate(-50%, -110%)", background: habitTheme.panel, border: `1px solid ${habitTheme.border}`, borderRadius: 10, padding: 6, minWidth: 170, display: "grid", gap: 4 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button role="menuitem" aria-label="Rename habit" onClick={() => { setEditingHabit(habitContextMenu.habit); setEditingHabitValue(habitContextMenu.habit); setHabitContextMenu({ open: false, x: 0, y: 0, habit: "" }); }} style={{ border: "none", background: "transparent", color: habitTheme.heading, textAlign: "left", padding: "6px 8px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Rename</button>
+            <button role="menuitem" aria-label="Archive habit" onClick={() => { archiveHabit(habitContextMenu.habit); setHabitContextMenu({ open: false, x: 0, y: 0, habit: "" }); }} style={{ border: "none", background: "transparent", color: habitTheme.heading, textAlign: "left", padding: "6px 8px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Archive</button>
+            <button role="menuitem" aria-label="Delete habit" onClick={() => { removeHabit(habitContextMenu.habit); setHabitContextMenu({ open: false, x: 0, y: 0, habit: "" }); }} style={{ border: "none", background: "transparent", color: nightMode ? "#fca5a5" : "#b91c1c", textAlign: "left", padding: "6px 8px", borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Delete</button>
+          </div>
+        </div>
+      ) : null}
+
+      <CommandPaletteDialog
+        open={palette.open}
+        onClose={() => palette.setOpen(false)}
+        palette={palette}
+        theme={{ ...habitTheme, text: habitTheme.heading }}
+        nightMode={nightMode}
+        dialogLabel="Habits command palette"
+        inputLabel="Search habits commands"
+      />
+      <LiveRegion message={liveMessage} />
       <style jsx>{`
         .habit-complete-pulse {
-          animation: habitCompletePulse 0.4s ease-out;
+          animation: ${reducedMotion ? "none" : "habitCompletePulse 0.4s ease-out"};
         }
 
         .soft-focus-card {
-          animation: softFocusEnter 0.38s ease;
+          animation: ${reducedMotion ? "none" : "softFocusEnter 0.38s ease"};
         }
 
         .soft-focus-exit {
-          animation: softFocusExit 0.2s ease;
+          animation: ${reducedMotion ? "none" : "softFocusExit 0.2s ease"};
         }
 
         @keyframes habitCompletePulse {

@@ -1,9 +1,25 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { supabase } from "@/lib/supabaseClient";
 import { useNightMode } from "@/lib/useNightMode";
+import { useAuthBootstrap } from "@/lib/hooks/useAuthBootstrap";
+import { useCommandPalette } from "@/lib/hooks/useCommandPalette";
+import { usePerformanceProbe } from "@/lib/hooks/usePerformanceProbe";
+import { getSignedMediaUrl, isStorageRef, uploadImageToSupabase } from "@/lib/mediaStorage";
+import {
+  readCalendarHabitChecks,
+  readCalendarHabitList,
+  readCalendarNotes,
+  readCalendarRitual,
+  readJournalMoodMap,
+  writeCalendarNotes,
+  writeCalendarRitual,
+} from "@/lib/repositories/calendarRepo";
 import NavBar from "@/app/components/NavBar";
+import CommandPaletteDialog from "@/app/components/ui/CommandPaletteDialog";
+import LiveRegion from "@/app/components/ui/LiveRegion";
 
 const MOODS = [
   { key: "warm", label: "Warm", color: "#F4C7A1", tint: "#fff3ea" },
@@ -21,11 +37,11 @@ const REFLECTION_PROMPTS = [
 ];
 
 export default function CalendarPage() {
+  const router = useRouter();
   const [notes, setNotes] = useState({});
   const [text, setText] = useState("");
   const [selectedDate, setSelectedDate] = useState(null);
-  const [userId, setUserId] = useState(null);
-  const [authReady, setAuthReady] = useState(false);
+  const { authReady, userId } = useAuthBootstrap({ supabase, router, redirectTo: "/login" });
 
   const [todosByDate, setTodosByDate] = useState({});
   const [todoInput, setTodoInput] = useState("");
@@ -37,51 +53,12 @@ export default function CalendarPage() {
   const nightMode = useNightMode();
   const [journalMoodByDate, setJournalMoodByDate] = useState({});
   const [hoverPreview, setHoverPreview] = useState(null);
-
-  const router = useRouter();
+  const [signedMediaMap, setSignedMediaMap] = useState({});
+  const [liveMessage, setLiveMessage] = useState("");
   const today = new Date();
   const [calendarYear, setCalendarYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
   const daysInMonth = new Date(calendarYear, month + 1, 0).getDate();
-
-  function notesStorageKey(activeUserId) {
-    return `calendar_notes_${activeUserId || "guest"}_${calendarYear}_${String(month + 1).padStart(2, "0")}`;
-  }
-
-  function ritualStorageKey(activeUserId) {
-    return `calendar_ritual_${activeUserId || "guest"}_${calendarYear}_${String(month + 1).padStart(2, "0")}`;
-  }
-
-  function habitStorageKey(activeUserId) {
-    return `habit_checks_${activeUserId || "guest"}_${calendarYear}_${String(month + 1).padStart(2, "0")}`;
-  }
-
-  function habitListStorageKey(activeUserId) {
-    return `habit_list_${activeUserId || "guest"}`;
-  }
-
-  function habitBackupStorageKey(activeUserId) {
-    return `hibi_habit_checks_backup_${activeUserId || "guest"}_${calendarYear}_${String(month + 1).padStart(2, "0")}`;
-  }
-
-  function readJSON(key, fallback) {
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return fallback;
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === "object" ? parsed : fallback;
-    } catch {
-      return fallback;
-    }
-  }
-
-  function writeJSON(key, value) {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-      // Ignore localStorage failures gracefully.
-    }
-  }
 
   function ymd(day) {
     return `${calendarYear}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -136,55 +113,23 @@ export default function CalendarPage() {
     return "This day is still open. Start with one tiny act.";
   }
 
-  useEffect(() => {
-    let unsubscribe = null;
-
-    async function loadUser() {
-      if (!supabase) {
-        setAuthReady(true);
-        return;
-      }
-
-      const { data } = await supabase.auth.getUser();
-      const currentUserId = data?.user?.id || null;
-      if (!currentUserId) {
-        router.replace("/login");
-        return;
-      }
-
-      setUserId(currentUserId);
-      setAuthReady(true);
-
-      const { data: listener } = supabase.auth.onAuthStateChange((_, session) => {
-        const nextUserId = session?.user?.id || null;
-        setUserId(nextUserId);
-        if (!nextUserId) {
-          router.replace("/login");
-        }
-      });
-      unsubscribe = () => listener.subscription.unsubscribe();
-    }
-
-    loadUser();
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, [router]);
+  function mediaSrc(src) {
+    return signedMediaMap[src] || src;
+  }
 
   useEffect(() => {
     async function loadMonthData() {
-      const localNotes = readJSON(notesStorageKey(userId), {});
-      const ritual = readJSON(ritualStorageKey(userId), {});
-      const localHabits = readJSON(habitStorageKey(userId), {});
-      const backupHabits = readJSON(habitBackupStorageKey(userId), {});
-      const localHabitList = readJSON(habitListStorageKey(userId), []);
+      const localNotes = readCalendarNotes(userId, calendarYear, month);
+      const ritual = readCalendarRitual(userId, calendarYear, month);
+      const mergedHabits = readCalendarHabitChecks(userId, calendarYear, month);
+      const localHabitList = readCalendarHabitList(userId);
 
       setNotes(localNotes);
       setTodosByDate(ritual.todosByDate || {});
       setMoodByDate(ritual.moodByDate || {});
       setReflectionByDate(ritual.reflectionByDate || {});
       setPhotosByDate(ritual.photosByDate || {});
-      setHabitChecks({ ...backupHabits, ...localHabits });
+      setHabitChecks(mergedHabits);
       setHabitList(Array.isArray(localHabitList) ? localHabitList : []);
 
       if (!supabase || !userId) return;
@@ -205,7 +150,7 @@ export default function CalendarPage() {
       });
 
       setNotes(merged);
-      writeJSON(notesStorageKey(userId), merged);
+      writeCalendarNotes(userId, calendarYear, month, merged);
     }
 
     loadMonthData();
@@ -214,9 +159,7 @@ export default function CalendarPage() {
   useEffect(() => {
     if (!userId) return;
     try {
-      const key = `hibi_journal_${userId}_${calendarYear}_all`;
-      const raw = localStorage.getItem(key);
-      const parsed = raw ? JSON.parse(raw) : {};
+      const parsed = readJournalMoodMap(userId, calendarYear);
       const moodMap = {};
       if (parsed && typeof parsed === "object") {
         Object.entries(parsed).forEach(([date, entries]) => {
@@ -233,12 +176,12 @@ export default function CalendarPage() {
   }, [userId, calendarYear, month]);
 
   useEffect(() => {
-    const initialDay = today.getFullYear() === calendarYear && today.getMonth() === month ? today.getDate() : 1;
-    const date = ymd(initialDay);
+    const currentDate = new Date();
+    const initialDay = currentDate.getFullYear() === calendarYear && currentDate.getMonth() === month ? currentDate.getDate() : 1;
+    const date = `${calendarYear}-${String(month + 1).padStart(2, "0")}-${String(initialDay).padStart(2, "0")}`;
     setSelectedDate(date);
-    setText(notes[date] || "");
     setTodoInput("");
-  }, [month]);
+  }, [calendarYear, month]);
 
   useEffect(() => {
     if (selectedDate) {
@@ -254,19 +197,27 @@ export default function CalendarPage() {
       const curDay = Number(String(selectedDate).split("-")[2] || 1);
       if (e.key === "j" || e.key === "J") {
         const nextDay = Math.max(1, curDay - 1);
-        if (nextDay !== curDay) openDay(nextDay);
+        if (nextDay !== curDay) {
+          const date = `${calendarYear}-${String(month + 1).padStart(2, "0")}-${String(nextDay).padStart(2, "0")}`;
+          setSelectedDate(date);
+          setTodoInput("");
+        }
       }
       if (e.key === "k" || e.key === "K") {
         const nextDay = Math.min(daysInMonth, curDay + 1);
-        if (nextDay !== curDay) openDay(nextDay);
+        if (nextDay !== curDay) {
+          const date = `${calendarYear}-${String(month + 1).padStart(2, "0")}-${String(nextDay).padStart(2, "0")}`;
+          setSelectedDate(date);
+          setTodoInput("");
+        }
       }
     }
     window.addEventListener("keydown", handleKeyNav);
     return () => window.removeEventListener("keydown", handleKeyNav);
-  }, [selectedDate, daysInMonth]);
+  }, [selectedDate, daysInMonth, calendarYear, month]);
 
   function persistRitual(nextTodos, nextMoods, nextReflections, nextPhotos) {
-    writeJSON(ritualStorageKey(userId), {
+    writeCalendarRitual(userId, calendarYear, month, {
       todosByDate: nextTodos,
       moodByDate: nextMoods,
       reflectionByDate: nextReflections,
@@ -279,7 +230,7 @@ export default function CalendarPage() {
 
     const updated = { ...notes, [selectedDate]: text };
     setNotes(updated);
-    writeJSON(notesStorageKey(userId), updated);
+    writeCalendarNotes(userId, calendarYear, month, updated);
 
     if (!supabase || !userId) return;
 
@@ -291,6 +242,7 @@ export default function CalendarPage() {
       },
       { onConflict: "user_id,date" }
     );
+    setLiveMessage(`Saved day card for ${selectedDate}.`);
   }
 
   function openDay(day) {
@@ -360,7 +312,7 @@ export default function CalendarPage() {
 
     const img = new window.Image();
     const objectUrl = URL.createObjectURL(file);
-    img.onload = () => {
+    img.onload = async () => {
       URL.revokeObjectURL(objectUrl);
       const MAX = 800;
       const scale = Math.min(1, MAX / Math.max(img.width, img.height));
@@ -371,13 +323,15 @@ export default function CalendarPage() {
       canvas.height = h;
       const ctx = canvas.getContext("2d");
       ctx.drawImage(img, 0, 0, w, h);
-      const src = canvas.toDataURL("image/jpeg", 0.7);
-
-      const existing = photosByDate[selectedDate] || [];
-      const nextPhotosForDate = [src, ...existing].slice(0, 6);
-      const nextPhotos = { ...photosByDate, [selectedDate]: nextPhotosForDate };
-      setPhotosByDate(nextPhotos);
-      persistRitual(todosByDate, moodByDate, reflectionByDate, nextPhotos);
+      canvas.toBlob(async (blob) => {
+        const remoteSrc = blob ? await uploadImageToSupabase(blob, userId, "calendar") : null;
+        const src = remoteSrc || canvas.toDataURL("image/jpeg", 0.7);
+        const existing = photosByDate[selectedDate] || [];
+        const nextPhotosForDate = [src, ...existing].slice(0, 6);
+        const nextPhotos = { ...photosByDate, [selectedDate]: nextPhotosForDate };
+        setPhotosByDate(nextPhotos);
+        persistRitual(todosByDate, moodByDate, reflectionByDate, nextPhotos);
+      }, "image/jpeg", 0.75);
     };
     img.onerror = () => URL.revokeObjectURL(objectUrl);
     img.src = objectUrl;
@@ -429,7 +383,6 @@ export default function CalendarPage() {
   const weekSummary = useMemo(() => {
     if (!weekHabitCounts.length) return "Gentle week in progress.";
     const peak = Math.max(...weekHabitCounts);
-    const low = Math.min(...weekHabitCounts);
     const mid = weekHabitCounts[Math.floor(weekHabitCounts.length / 2)] || 0;
 
     if (peak === 0) return "A soft week with space to begin again.";
@@ -473,7 +426,12 @@ export default function CalendarPage() {
   const monthHabitDoneTotal = useMemo(() => {
     let sum = 0;
     for (let day = 1; day <= daysInMonth; day++) {
-      sum += getHabitDoneCountForDay(day);
+      Object.entries(habitChecks).forEach(([key, value]) => {
+        if (value !== "dot") return;
+        const match = key.match(/-(\d+)$/);
+        const dayNum = match ? Number(match[1]) : 0;
+        if (dayNum === day) sum += 1;
+      });
     }
     return sum;
   }, [habitChecks, daysInMonth]);
@@ -488,7 +446,7 @@ export default function CalendarPage() {
       count += 1;
     });
     return count ? sum / count : 3;
-  }, [moodByDate, month]);
+  }, [moodByDate, calendarYear, month]);
 
   const monthSummary = useMemo(() => {
     if (monthHabitDoneTotal === 0) return "This month is quiet so far, with room for gentle starts.";
@@ -505,7 +463,7 @@ export default function CalendarPage() {
     return [first, second, third];
   }, [monthHabitDoneTotal, daysInMonth, monthMoodScore]);
 
-  const memoryTiles = useMemo(() => {
+  const memoryTiles = (() => {
     const tiles = [];
     for (let day = 1; day <= daysInMonth; day++) {
       const date = ymd(day);
@@ -515,7 +473,77 @@ export default function CalendarPage() {
       }
     }
     return tiles;
-  }, [photosByDate, daysInMonth, month]);
+  })();
+
+  useEffect(() => {
+    const notesKey = `calendar_notes_${userId || "guest"}_${calendarYear}_${String(month + 1).padStart(2, "0")}`;
+    const ritualKey = `calendar_ritual_${userId || "guest"}_${calendarYear}_${String(month + 1).padStart(2, "0")}`;
+
+    function onStorage(event) {
+      if (!userId || !event.key) return;
+      if (event.key === notesKey) {
+        setNotes(readCalendarNotes(userId, calendarYear, month));
+      }
+      if (event.key === ritualKey) {
+        const ritual = readCalendarRitual(userId, calendarYear, month);
+        setTodosByDate(ritual.todosByDate || {});
+        setMoodByDate(ritual.moodByDate || {});
+        setReflectionByDate(ritual.reflectionByDate || {});
+        setPhotosByDate(ritual.photosByDate || {});
+      }
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [calendarYear, month, userId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function hydrateSignedMedia() {
+      const refs = new Set();
+      Object.values(photosByDate || {}).forEach((photos) => {
+        if (!Array.isArray(photos)) return;
+        photos.forEach((src) => {
+          if (isStorageRef(src)) refs.add(src);
+        });
+      });
+      if (!refs.size) return;
+
+      const resolved = await Promise.all(
+        Array.from(refs).map(async (src) => [src, await getSignedMediaUrl(src)])
+      );
+
+      if (cancelled) return;
+      setSignedMediaMap((prev) => {
+        const next = { ...prev };
+        resolved.forEach(([src, url]) => {
+          if (url) next[src] = url;
+        });
+        return next;
+      });
+    }
+
+    hydrateSignedMedia();
+    return () => {
+      cancelled = true;
+    };
+  }, [photosByDate]);
+
+  const calendarCommands = [
+    { label: "Save current note", group: "Note", shortcut: "Save", keywords: "persist", action: saveNote },
+    { label: "Jump to today", group: "Navigation", shortcut: "Today", keywords: "today now", action: () => openDay(today.getDate()) },
+    { label: "Previous month", group: "Navigation", shortcut: "Left", keywords: "back", action: () => setMonth((m) => (m === 0 ? 11 : m - 1)) },
+    { label: "Next month", group: "Navigation", shortcut: "Right", keywords: "forward", action: () => setMonth((m) => (m === 11 ? 0 : m + 1)) },
+  ];
+
+  const palette = useCommandPalette(calendarCommands);
+
+  usePerformanceProbe("calendar", {
+    monthDays: daysInMonth,
+    memoryTileCount: memoryTiles.length,
+    todoCount: (todosByDate[selectedDate] || []).length,
+    commandCount: palette.filtered.length,
+  });
 
   if (!authReady) {
     return (
@@ -526,7 +554,7 @@ export default function CalendarPage() {
           background: nightMode
             ? "linear-gradient(165deg, #0f1113 0%, #15181c 50%, #1c2025 100%)"
             : "linear-gradient(150deg, #fdf6ec 0%, #e8f5e9 55%, #c8e6c9 100%)",
-          fontFamily: "system-ui, sans-serif",
+          fontFamily: "var(--font-manrope), sans-serif",
           color: nightMode ? "#e9ecef" : "#14532d",
         }}
       >
@@ -556,13 +584,14 @@ export default function CalendarPage() {
 
   return (
     <main
+      className="hibi-aurora-bg"
       style={{
         padding: "28px 24px",
         minHeight: "100vh",
         background: nightMode
           ? "linear-gradient(145deg, #070b0d 0%, #0c1117 35%, #101820 70%, #0e1a14 100%)"
           : "linear-gradient(145deg, #f7fbf4 0%, #eef7e8 40%, #e0f0da 75%, #d4ead4 100%)",
-        fontFamily: "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif",
+        fontFamily: "var(--font-manrope), sans-serif",
         animation: "hibiFadeIn 0.35s ease",
       }}
     >
@@ -578,27 +607,48 @@ export default function CalendarPage() {
       <div className="hibi-calendar-flex" style={{ display: "flex", alignItems: "flex-start", justifyContent: "center", gap: 26, flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 670px", maxWidth: 720 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-            <h1 style={{ color: calendarTheme.heading, fontWeight: 800, fontSize: "clamp(26px, 5vw, 38px)", letterSpacing: -0.5, margin: 0 }}>Calendar</h1>
-            <button
-              onClick={() => {
-                setCalendarYear(today.getFullYear());
-                setMonth(today.getMonth());
-                setSelectedDate(ymd(today.getDate()));
-              }}
-              style={{
-                background: "#388e3c",
-                color: "#fff",
-                border: "none",
-                borderRadius: 8,
-                fontWeight: 700,
-                padding: "8px 16px",
-                cursor: "pointer",
-                fontSize: 15,
-                marginLeft: 12,
-              }}
-            >
-              Jump to Today
-            </button>
+            <div>
+              <h1 className="hibi-brand-headline" style={{ color: calendarTheme.heading, fontWeight: 800, fontSize: "clamp(28px, 5vw, 40px)", letterSpacing: -0.5, margin: 0 }}>Calendar Studio</h1>
+              <p style={{ margin: "3px 0 0", color: calendarTheme.muted, fontSize: 13 }}>See your month as story, signal, and momentum.</p>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button
+                onClick={() => palette.setOpen(true)}
+                style={{
+                  border: `1px solid ${calendarTheme.border}`,
+                  background: "transparent",
+                  color: calendarTheme.muted,
+                  borderRadius: 999,
+                  fontWeight: 700,
+                  padding: "6px 10px",
+                  cursor: "pointer",
+                  fontSize: 12,
+                }}
+                title="Open command palette"
+              >
+                ⌘K
+              </button>
+              <button
+                onClick={() => {
+                  setCalendarYear(today.getFullYear());
+                  setMonth(today.getMonth());
+                  setSelectedDate(ymd(today.getDate()));
+                }}
+                style={{
+                  background: "#388e3c",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 8,
+                  fontWeight: 700,
+                  padding: "8px 16px",
+                  cursor: "pointer",
+                  fontSize: 15,
+                  marginLeft: 12,
+                }}
+              >
+                Today
+              </button>
+            </div>
           </div>
 
           <div className="hibi-cal-month-nav" style={{ display: "flex", alignItems: "center", gap: 10, color: nightMode ? "#b6bdc7" : "#388e3c", fontWeight: 600, fontSize: 24, marginBottom: 10 }}>
@@ -666,8 +716,6 @@ export default function CalendarPage() {
               const mood = getMoodMeta(date);
               const doneCount = getHabitDoneCountForDay(day);
               const progress = totalHabits > 0 ? Math.min(1, doneCount / totalHabits) : 0;
-              const ringCircumference = 2 * Math.PI * 4;
-              const ringOffset = ringCircumference * (1 - progress);
               const isSelected = selectedDate === date;
               const thumb = (photosByDate[date] || [])[0];
 
@@ -711,10 +759,13 @@ export default function CalendarPage() {
                 >
                   <span className="hibi-cal-day-num" style={{ fontSize: 18, fontWeight: 700, lineHeight: 1 }}>{day}</span>
                   {thumb ? (
-                    <img
-                      src={thumb}
+                    <Image
+                      src={mediaSrc(thumb)}
                       alt="Memory"
-                      style={{ position: "absolute", right: 6, top: 6, width: 16, height: 16, borderRadius: 4, objectFit: "cover", boxShadow: "0 1px 4px #00000022" }}
+                      width={16}
+                      height={16}
+                      unoptimized
+                      style={{ position: "absolute", right: 6, top: 6, borderRadius: 4, objectFit: "cover", boxShadow: "0 1px 4px #00000022" }}
                     />
                   ) : null}
                   {journalMoodByDate[date] ? (
@@ -757,7 +808,7 @@ export default function CalendarPage() {
                     style={{ border: selectedDate === tile.date ? `2px solid ${nightMode ? "#7f8b9a" : "#2e7d32"}` : `1px solid ${nightMode ? "#2b3139" : "#cad9ca"}`, borderRadius: 8, background: nightMode ? "#111418" : "#fff", padding: 2, cursor: "pointer" }}
                     title={tile.date}
                   >
-                    <img src={tile.src} alt={tile.date} style={{ width: 40, height: 40, borderRadius: 6, objectFit: "cover" }} />
+                    <Image src={mediaSrc(tile.src)} alt={tile.date} width={40} height={40} unoptimized style={{ borderRadius: 6, objectFit: "cover" }} />
                   </button>
                 ))}
               </div>
@@ -783,7 +834,6 @@ export default function CalendarPage() {
               ))}
               {(() => {
                 const firstDay = new Date(calendarYear, month, 1).getDay();
-                const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
                 const boxes = [];
                 for (let i = 0; i < firstDay; i++) boxes.push(null);
                 for (let day = 1; day <= daysInMonth; day++) boxes.push(day);
@@ -939,7 +989,7 @@ export default function CalendarPage() {
               <div style={{ display: "flex", gap: 6, marginTop: 8, overflowX: "auto" }}>
                 {(photosByDate[selectedDate] || []).map((src, idx) => (
                   <div key={`photo-${idx}`} style={{ position: "relative" }}>
-                    <img src={src} alt={`memory-${idx}`} style={{ width: 50, height: 50, borderRadius: 8, objectFit: "cover", border: `1px solid ${nightMode ? "#39424d" : "#cfddcf"}` }} />
+                    <Image src={mediaSrc(src)} alt={`memory-${idx}`} width={50} height={50} unoptimized style={{ borderRadius: 8, objectFit: "cover", border: `1px solid ${nightMode ? "#39424d" : "#cfddcf"}` }} />
                     <button
                       onClick={() => removePhoto(idx)}
                       style={{ position: "absolute", right: -4, top: -4, width: 16, height: 16, borderRadius: "50%", border: "none", background: "#7c2d2d", color: "#fff", fontSize: 10, cursor: "pointer", lineHeight: 1 }}
@@ -980,6 +1030,18 @@ export default function CalendarPage() {
           {hoverPreview.text}
         </div>
       ) : null}
+
+      <CommandPaletteDialog
+        open={palette.open}
+        onClose={() => palette.setOpen(false)}
+        palette={palette}
+        theme={{ ...calendarTheme, text: calendarTheme.heading }}
+        nightMode={nightMode}
+        dialogLabel="Calendar command palette"
+        inputLabel="Search calendar commands"
+        zIndex={1300}
+      />
+      <LiveRegion message={liveMessage} />
 
       <style jsx>{`
         .day-card-transition {
